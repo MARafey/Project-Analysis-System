@@ -1,17 +1,18 @@
 # 🎓 FYP Analysis System
 
-A comprehensive tool to analyze Final Year Projects (FYPs), categorize them by domains, and identify similar projects based on their descriptions.
+A comprehensive React-based tool to analyze Final Year Projects (FYPs), categorize them by domains, and identify similar projects based on their descriptions. Built with modern web technologies for client-side processing and easy deployment.
 
 ## 🌟 Features
 
 - **🤖 AI-Powered Domain Categorization**: Uses Gemini AI for intelligent project categorization with reasoning
 - **📊 Fallback Keyword Matching**: Automatic fallback to keyword-based categorization if AI is unavailable
-- **🔍 Advanced Similarity Analysis**: Identifies similar projects and explains why they overlap
+- **🔍 Advanced Similarity Analysis**: Identifies similar projects and explains why they overlap using TF-IDF vectorization
 - **🎯 Multiple Domain Support**: Projects can belong to multiple domains with confidence scores
 - **📈 Similarity Levels**: Classifies similarity as Very High, High, Medium, or Low with detailed explanations
 - **📑 Comprehensive Excel Export**: Generates organized Excel files with multiple sheets and insights
-- **🌐 Modern Web Interface**: Easy-to-use Streamlit web application with progress tracking
-- **🔑 API Integration**: Full Gemini AI and optional HuggingFace API support
+- **🌐 Modern React Interface**: Beautiful, responsive web application with real-time progress tracking
+- **⚡ Client-Side Processing**: All analysis runs in your browser - no server required
+- **🔑 API Integration**: Optional Gemini AI integration for enhanced categorization
 
 ## 🚀 Quick Start
 
@@ -21,7 +22,7 @@ A comprehensive tool to analyze Final Year Projects (FYPs), categorize them by d
 
 Simply visit the deployed application and start analyzing your FYP projects immediately - no installation required!
 
-### Option 2: Local Installation
+### Option 2: Local Development
 
 1. **Clone the Repository**:
 
@@ -33,48 +34,60 @@ Simply visit the deployed application and start analyzing your FYP projects imme
 2. **Install Dependencies**:
 
    ```bash
-   pip install -r requirements.txt
+   npm install
    ```
 
-3. **Run the Web App**:
+3. **Start Development Server**:
 
    ```bash
-   streamlit run web_app.py
+   npm start
    ```
 
 4. **Upload Your Data**: Upload an Excel file containing FYP project data through the web interface
 
-5. **Download Results**: Get two Excel files with domain categorization and similarity analysis
+5. **Download Results**: Get comprehensive Excel files with domain categorization and similarity analysis
 
-### Option 3: Command Line
+### Option 3: Build for Production
 
-1. **Install Dependencies**:
+1. **Build the Application**:
 
    ```bash
-   pip install -r requirements.txt
+   npm run build
    ```
 
-2. **Run Analysis**:
-   ```python
-   python main.py
-   ```
+2. **Deploy**: Upload the `build` folder to any static hosting service
 
 ## 🚀 Deployment
 
-This project is configured for easy deployment on Vercel:
+This project is configured for easy deployment on Vercel and other static hosting platforms:
 
 ### Deploy to Vercel
 
 1. **Fork this repository**
 2. **Connect to Vercel**:
-
    - Visit [vercel.com](https://vercel.com)
    - Import your forked repository
    - Deploy automatically
-
 3. **Optional: Configure Environment Variables**:
-   - Add `GEMINI_API_KEY` for AI-powered categorization
-   - Add `HUGGINGFACE_API_KEY` for enhanced NLP
+   - Add `REACT_APP_GEMINI_API_KEY` for AI-powered categorization
+
+### Deploy to Netlify
+
+1. **Build the project**: `npm run build`
+2. **Upload the `build` folder** to Netlify
+
+### Deploy to GitHub Pages
+
+1. **Install gh-pages**: `npm install --save-dev gh-pages`
+2. **Add to package.json**:
+   ```json
+   "homepage": "https://yourusername.github.io/Project-Analysis-System",
+   "scripts": {
+     "predeploy": "npm run build",
+     "deploy": "gh-pages -d build"
+   }
+   ```
+3. **Deploy**: `npm run deploy`
 
 ## 📊 Input Data Format
 
@@ -96,7 +109,7 @@ Short_Title: F24-002-Cricket-AI
 
 ## 📁 Output Files
 
-The system generates two main Excel files:
+The system generates comprehensive Excel files with multiple sheets:
 
 ### 1. Domain Categorization (`fyp_domain_categorization.xlsx`)
 
@@ -127,26 +140,11 @@ The system generates two main Excel files:
 For enhanced analysis, you can provide API keys:
 
 - **Gemini API**: For advanced text understanding ([Get API Key](https://makersuite.google.com/app/apikey))
-- **HuggingFace API**: For enhanced NLP processing
 
-Set as environment variables or enter in the web interface:
+Enter your API key in the application settings or set as environment variable:
 
 ```bash
-export GEMINI_API_KEY="your_gemini_api_key"
-export HUGGINGFACE_API_KEY="your_hf_api_key"
-```
-
-### Analysis Settings
-
-You can customize the analysis by modifying `config.py`:
-
-```python
-# Similarity threshold (0.1 - 0.9)
-SIMILARITY_THRESHOLD = 0.3
-
-# TF-IDF parameters
-MAX_FEATURES_TFIDF = 1000
-NGRAM_RANGE = (1, 2)
+REACT_APP_GEMINI_API_KEY="your_gemini_api_key"
 ```
 
 ## 🎯 Domain Categories
@@ -174,7 +172,7 @@ The system recognizes 15+ domain categories:
 The system uses advanced NLP techniques:
 
 1. **Text Preprocessing**: Cleans and normalizes project descriptions
-2. **TF-IDF Vectorization**: Converts text to numerical vectors
+2. **TF-IDF Vectorization**: Converts text to numerical vectors using JavaScript implementation
 3. **Cosine Similarity**: Measures similarity between project vectors
 4. **Domain Overlap**: Considers shared technical domains
 5. **Explanation Generation**: Creates human-readable explanations
@@ -188,18 +186,27 @@ The system uses advanced NLP techniques:
 
 ## 🛠️ Technical Details
 
-### Dependencies:
+### Tech Stack:
 
-- **pandas**: Data manipulation and analysis
-- **scikit-learn**: Machine learning algorithms
-- **streamlit**: Web application framework
-- **openpyxl**: Excel file handling
-- **google-generativeai**: Gemini AI integration
-- **matplotlib/seaborn**: Data visualization
+- **React 18**: Modern React with hooks
+- **Tailwind CSS**: Utility-first CSS framework
+- **Recharts**: Data visualization
+- **XLSX**: Excel file processing
+- **Natural**: Natural language processing
+- **Lucide React**: Modern icon library
+- **React Toastify**: Notifications
+- **React Dropzone**: File upload
+
+### JavaScript Libraries for Analysis:
+
+- **TF-IDF Implementation**: Custom vectorizer for similarity analysis
+- **Stopword Removal**: Text preprocessing
+- **Cosine Similarity**: Mathematical similarity calculation
+- **Domain Categorization**: Keyword-based and AI-powered classification
 
 ### Algorithm:
 
-1. Load and preprocess Excel data
+1. Load and preprocess Excel data using XLSX library
 2. Extract and clean text from project descriptions
 3. Apply AI-powered or keyword-based domain categorization
 4. Generate TF-IDF vectors for similarity analysis
@@ -209,25 +216,20 @@ The system uses advanced NLP techniques:
 
 ## 📋 Example Usage
 
-### Web Interface:
+### Basic Usage:
 
 1. Visit the [deployed app](https://project-analysis-system.vercel.app)
-2. Upload Excel file
+2. Upload Excel file with FYP data
 3. Optional: Configure Gemini API key for AI analysis
-4. Click "Analyze FYP Data"
-5. Download results
+4. Click "Start Analysis"
+5. Download comprehensive Excel reports
 
-### Programmatic Usage:
+### Advanced Features:
 
-```python
-from main import FYPAnalyzer
-
-# Initialize analyzer
-analyzer = FYPAnalyzer(gemini_api_key="your_api_key")  # Optional
-
-# Run analysis
-analyzer.analyze_fyp_data("your_fyp_data.xlsx", output_dir="results")
-```
+- **AI Enhancement**: Add Gemini API key for intelligent categorization
+- **Real-time Progress**: Track analysis progress with detailed status
+- **Interactive Results**: Filter and explore results in the web interface
+- **Multiple Export Options**: Download domain-specific or combined reports
 
 ## 🔍 Example Output
 
@@ -235,11 +237,11 @@ analyzer.analyze_fyp_data("your_fyp_data.xlsx", output_dir="results")
 
 ```json
 {
-  "project_id": "F24-001-ProbeXpert",
-  "project_title": "ProbeXpert",
+  "projectId": "F24-001-ProbeXpert",
+  "projectTitle": "ProbeXpert",
   "domains": ["Cybersecurity"],
-  "primary_domain": "Cybersecurity",
-  "confidence_scores": {
+  "primaryDomain": "Cybersecurity",
+  "confidenceScores": {
     "Cybersecurity": {
       "score": 8,
       "reasoning": "Project focuses on vulnerability assessment and security testing",
@@ -253,11 +255,11 @@ analyzer.analyze_fyp_data("your_fyp_data.xlsx", output_dir="results")
 
 ```json
 {
-  "project_1_id": "F24-001-ProbeXpert",
-  "project_2_id": "F24-015-SecureNet",
-  "similarity_score": 0.742,
-  "similarity_level": "Very High",
-  "overlapping_domains": ["Cybersecurity"],
+  "project1Id": "F24-001-ProbeXpert",
+  "project2Id": "F24-015-SecureNet",
+  "similarityScore": 0.742,
+  "similarityLevel": "Very High",
+  "overlappingDomains": ["Cybersecurity"],
   "explanation": "Both projects belong to Cybersecurity domain(s). Share common concepts: security, vulnerability, assessment. Very similar project objectives and methodologies."
 }
 ```
@@ -294,9 +296,13 @@ If you encounter any issues or have questions:
 - [ ] Multi-language support
 - [ ] Bulk processing capabilities
 - [ ] API endpoints for integration
+- [ ] Mobile-responsive enhancements
+- [ ] Offline mode support
 
 ---
 
 **Made with ❤️ for better FYP management and analysis**
 
-Visit the live demo: **[https://project-analysis-system.vercel.app](https://project-analysis-system.vercel.app)**
+🌐 **Live Demo**: [https://project-analysis-system.vercel.app](https://project-analysis-system.vercel.app)
+
+⭐ **GitHub**: [https://github.com/MARafey/Project-Analysis-System](https://github.com/MARafey/Project-Analysis-System)
