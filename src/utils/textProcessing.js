@@ -1,5 +1,30 @@
-import natural from 'natural';
 import { removeStopwords, eng } from 'stopword';
+
+// Simple tokenizer implementation
+function tokenize(text) {
+  if (!text || typeof text !== 'string') return [];
+  
+  // Convert to lowercase, remove punctuation, and split by whitespace
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(token => token.length > 0);
+}
+
+// Generate n-grams
+function generateNGrams(tokens, n) {
+  const ngrams = [];
+  for (let i = 0; i <= tokens.length - n; i++) {
+    ngrams.push(tokens.slice(i, i + n));
+  }
+  return ngrams;
+}
+
+// Generate bigrams
+function generateBigrams(tokens) {
+  return generateNGrams(tokens, 2).map(bigram => bigram.join('_'));
+}
 
 // TF-IDF Vectorizer implementation
 export class TFIDFVectorizer {
@@ -16,18 +41,17 @@ export class TFIDFVectorizer {
   preprocess(text) {
     if (!text || typeof text !== 'string') return [];
     
-    // Convert to lowercase and tokenize
-    const tokens = natural.WordTokenizer().tokenize(text.toLowerCase());
+    // Tokenize
+    const tokens = tokenize(text);
     
     // Remove stopwords and filter valid words
     const filteredTokens = removeStopwords(tokens, eng)
       .filter(token => token.length > 2 && /^[a-z]+$/.test(token));
     
     // Add bigrams
-    const bigrams = natural.NGrams.bigrams(filteredTokens);
-    const bigramStrings = bigrams.map(bigram => bigram.join('_'));
+    const bigrams = generateBigrams(filteredTokens);
     
-    return [...filteredTokens, ...bigramStrings];
+    return [...filteredTokens, ...bigrams];
   }
 
   // Build vocabulary from documents
@@ -250,8 +274,8 @@ export function generateSimilarityExplanation(proj1Id, proj2Id, score, overlappi
   }
 
   // Find common keywords
-  const words1 = new Set(text1.toLowerCase().split(/\s+/));
-  const words2 = new Set(text2.toLowerCase().split(/\s+/));
+  const words1 = new Set(tokenize(text1));
+  const words2 = new Set(tokenize(text2));
   const commonWords = [...words1].filter(word => words2.has(word));
 
   // Filter meaningful common words

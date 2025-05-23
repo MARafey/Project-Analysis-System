@@ -1,17 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { GraduationCap, Settings, Download, Sparkles } from 'lucide-react';
-
-// Components
-import FileUpload from './components/FileUpload';
-import ProgressTracker from './components/ProgressTracker';
-import ResultsDisplay from './components/ResultsDisplay';
 
 // Utils
 import { readExcelFile, exportDomainCategorization, exportSimilarityAnalysis, exportCombinedReports, createSampleExcelFile } from './utils/excelUtils';
 import { TFIDFVectorizer, cosineSimilarity, categorizeByKeywords, generateSimilarityExplanation, getSimilarityLevel } from './utils/textProcessing';
-import { initializeGemini, isGeminiAvailable, categorizeWithGemini, batchCategorizeWithGemini } from './utils/geminiApi';
+import { initializeGemini, isGeminiAvailable, batchCategorizeWithGemini } from './utils/geminiApi';
 
 function App() {
   // State management
@@ -274,117 +268,122 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-primary-100 rounded-lg">
-                <GraduationCap className="w-8 h-8 text-primary-600" />
+      <header className="header">
+        <div className="container">
+          <div className="header-content">
+            <div className="header-left">
+              <div className="logo">
+                <span className="logo-icon">🎓</span>
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">FYP Analysis System</h1>
-                <p className="text-sm text-gray-600">Analyze and categorize Final Year Projects</p>
+                <h1 className="header-title">FYP Analysis System</h1>
+                <p className="header-subtitle">Analyze and categorize Final Year Projects</p>
               </div>
             </div>
             
-            <div className="flex items-center space-x-3">
+            <div className="header-actions">
               <button
                 onClick={() => setShowSettings(!showSettings)}
-                className="btn-secondary flex items-center space-x-2"
+                className="btn btn-secondary"
               >
-                <Settings className="w-4 h-4" />
-                <span>Settings</span>
+                ⚙️ Settings
               </button>
               
               <button
                 onClick={handleCreateSample}
-                className="btn-secondary flex items-center space-x-2"
+                className="btn btn-secondary"
               >
-                <Download className="w-4 h-4" />
-                <span>Sample Data</span>
+                📥 Sample Data
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
+      <main className="main">
+        <div className="container">
           {/* Settings Panel */}
           {showSettings && (
-            <div className="bg-white rounded-lg border border-gray-200 p-6 animate-slide-up">
-              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center space-x-2">
-                <Sparkles className="w-5 h-5 text-primary-600" />
-                <span>AI Configuration</span>
+            <div className="card settings-panel">
+              <h3 className="settings-title">
+                ✨ AI Configuration
               </h3>
               
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Gemini API Key (Optional)
-                  </label>
-                  <div className="flex space-x-3">
-                    <input
-                      type="password"
-                      value={geminiApiKey}
-                      onChange={(e) => setGeminiApiKey(e.target.value)}
-                      placeholder="Enter your Gemini API key for AI-powered analysis"
-                      className="flex-1 input-field"
-                    />
-                    <button
-                      onClick={handleGeminiSetup}
-                      disabled={!geminiApiKey.trim()}
-                      className="btn-primary"
-                    >
-                      Setup AI
-                    </button>
-                  </div>
-                  
-                  {useGemini && isGeminiAvailable() && (
-                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm text-green-700">✅ Gemini AI is active and ready</p>
-                    </div>
-                  )}
-                  
-                  <p className="mt-2 text-xs text-gray-500">
-                    Get your free API key from{' '}
-                    <a 
-                      href="https://makersuite.google.com/app/apikey" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-primary-600 hover:text-primary-700"
-                    >
-                      Google AI Studio
-                    </a>
-                  </p>
+              <div className="form-group">
+                <label className="form-label">
+                  Gemini API Key (Optional)
+                </label>
+                <div className="input-group">
+                  <input
+                    type="password"
+                    value={geminiApiKey}
+                    onChange={(e) => setGeminiApiKey(e.target.value)}
+                    placeholder="Enter your Gemini API key for AI-powered analysis"
+                    className="form-input"
+                  />
+                  <button
+                    onClick={handleGeminiSetup}
+                    disabled={!geminiApiKey.trim()}
+                    className="btn btn-primary"
+                  >
+                    Setup AI
+                  </button>
                 </div>
+                
+                {useGemini && isGeminiAvailable() && (
+                  <div className="success-message">
+                    <p>✅ Gemini AI is active and ready</p>
+                  </div>
+                )}
+                
+                <p className="help-text">
+                  Get your free API key from{' '}
+                  <a 
+                    href="https://makersuite.google.com/app/apikey" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="link"
+                  >
+                    Google AI Studio
+                  </a>
+                </p>
               </div>
             </div>
           )}
 
           {/* File Upload Section */}
           {!isAnalyzing && projectsData.length === 0 && (
-            <div className="animate-fade-in">
-              <FileUpload
-                onFileSelect={handleFileUpload}
-                isLoading={currentStep === 1}
-                error={error}
-              />
+            <div className="upload-section">
+              <div className="upload-area">
+                <div className="upload-icon">📁</div>
+                <h3>Upload FYP Data File</h3>
+                <p>Drag and drop your Excel file here, or click to select</p>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])}
+                  className="file-input"
+                />
+              </div>
+              {error && (
+                <div className="error-message">
+                  <p>❌ {error}</p>
+                </div>
+              )}
             </div>
           )}
 
           {/* Project Summary */}
           {projectsData.length > 0 && !isAnalyzing && (
-            <div className="bg-white rounded-lg border border-gray-200 p-6 animate-slide-up">
-              <div className="flex items-center justify-between">
+            <div className="card">
+              <div className="summary-content">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">Data Loaded</h3>
-                  <p className="text-sm text-gray-600">
+                  <h3>Data Loaded</h3>
+                  <p>
                     {totalProjects} projects ready for analysis
                     {useGemini && isGeminiAvailable() && (
-                      <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">
-                        <Sparkles className="w-3 h-3 mr-1" />
-                        AI Enhanced
+                      <span className="ai-badge">
+                        ✨ AI Enhanced
                       </span>
                     )}
                   </p>
@@ -392,9 +391,9 @@ function App() {
                 
                 <button
                   onClick={runAnalysis}
-                  className="btn-primary flex items-center space-x-2"
+                  className="btn btn-primary"
                 >
-                  <span>Start Analysis</span>
+                  Start Analysis
                 </button>
               </div>
             </div>
@@ -402,72 +401,199 @@ function App() {
 
           {/* Progress Tracker */}
           {isAnalyzing && (
-            <div className="animate-slide-up">
-              <ProgressTracker
-                currentStep={currentStep}
-                totalSteps={4}
-                currentProject={currentProject}
-                totalProjects={totalProjects}
-                status={analysisStatus}
-                error={error}
-              />
+            <div className="card">
+              <h3>Analysis Progress</h3>
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill"
+                  style={{ width: `${(currentStep / 4) * 100}%` }}
+                ></div>
+              </div>
+              <p className="progress-text">{analysisStatus}</p>
+              {currentProject > 0 && totalProjects > 0 && (
+                <p className="progress-detail">
+                  Processing project {currentProject} of {totalProjects}
+                </p>
+              )}
             </div>
           )}
 
           {/* Results Display */}
           {domainResults.length > 0 && similarityResults.length >= 0 && !isAnalyzing && (
-            <div className="animate-fade-in">
-              <ResultsDisplay
-                domainResults={domainResults}
-                similarityResults={similarityResults}
-                onDownloadDomains={handleDownloadDomains}
-                onDownloadSimilarity={handleDownloadSimilarity}
-                onDownloadCombined={handleDownloadCombined}
-              />
+            <div className="results-section">
+              <div className="results-header">
+                <h2>Analysis Results</h2>
+                <div className="download-actions">
+                  <button 
+                    onClick={handleDownloadDomains}
+                    className="btn btn-secondary"
+                  >
+                    📊 Download Domain Report
+                  </button>
+                  
+                  <button 
+                    onClick={handleDownloadSimilarity}
+                    className="btn btn-secondary"
+                  >
+                    🔍 Download Similarity Report
+                  </button>
+                  
+                  <button 
+                    onClick={handleDownloadCombined}
+                    className="btn btn-primary"
+                  >
+                    📋 Download Complete Report
+                  </button>
+                </div>
+              </div>
+
+              <div className="results-summary">
+                <div className="summary-card">
+                  <h4>Total Projects</h4>
+                  <p className="summary-number">{domainResults.length}</p>
+                </div>
+                <div className="summary-card">
+                  <h4>Unique Domains</h4>
+                  <p className="summary-number">
+                    {new Set(domainResults.flatMap(p => Array.isArray(p.domains) ? p.domains : [p.domains])).size}
+                  </p>
+                </div>
+                <div className="summary-card">
+                  <h4>Similar Pairs</h4>
+                  <p className="summary-number">{similarityResults.length}</p>
+                </div>
+              </div>
+
+              <div className="results-content">
+                <h3>Domain Categorization Results</h3>
+                <div className="table-container">
+                  <table className="results-table">
+                    <thead>
+                      <tr>
+                        <th>Project ID</th>
+                        <th>Title</th>
+                        <th>Primary Domain</th>
+                        <th>Method</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {domainResults.slice(0, 10).map((project, index) => (
+                        <tr key={index}>
+                          <td>{project.projectId}</td>
+                          <td>{project.projectTitle}</td>
+                          <td>{project.primaryDomain}</td>
+                          <td>
+                            <span className={`method-badge ${project.categorizationMethod}`}>
+                              {project.categorizationMethod === 'gemini_ai' ? 'AI' : 'Keywords'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {domainResults.length > 10 && (
+                    <p className="table-note">
+                      Showing first 10 results. Download the complete report for all {domainResults.length} projects.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Similarity Results */}
+              {similarityResults.length > 0 && (
+                <div className="results-content">
+                  <h3>Project Similarity Analysis</h3>
+                  <div className="table-container">
+                    <table className="results-table">
+                      <thead>
+                        <tr>
+                          <th>Project 1</th>
+                          <th>Project 2</th>
+                          <th>Similarity</th>
+                          <th>Level</th>
+                          <th>Explanation</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {similarityResults.slice(0, 10).map((pair, index) => (
+                          <tr key={index}>
+                            <td>{pair.project1Id}</td>
+                            <td>{pair.project2Id}</td>
+                            <td>{(pair.similarityScore * 100).toFixed(1)}%</td>
+                            <td>
+                              <span className={`method-badge similarity-${pair.similarityLevel.toLowerCase().replace(' ', '-')}`}>
+                                {pair.similarityLevel}
+                              </span>
+                            </td>
+                            <td title={pair.explanation}>
+                              {pair.explanation.substring(0, 100)}...
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {similarityResults.length > 10 && (
+                      <p className="table-note">
+                        Showing first 10 similarity pairs. Download the complete report for all {similarityResults.length} pairs.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* Instructions */}
           {projectsData.length === 0 && !isAnalyzing && (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center animate-fade-in">
-              <div className="max-w-2xl mx-auto space-y-4">
-                <h2 className="text-2xl font-bold text-gray-900">How to Use</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-                  <div className="space-y-2">
-                    <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mx-auto">
-                      <span className="text-primary-600 font-bold">1</span>
-                    </div>
-                    <h3 className="font-medium text-gray-900">Upload Data</h3>
-                    <p className="text-sm text-gray-600">
-                      Upload your Excel file containing FYP project data with titles and descriptions.
-                    </p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mx-auto">
-                      <span className="text-primary-600 font-bold">2</span>
-                    </div>
-                    <h3 className="font-medium text-gray-900">Analyze</h3>
-                    <p className="text-sm text-gray-600">
-                      Our system will categorize projects by domain and find similar projects automatically.
-                    </p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mx-auto">
-                      <span className="text-primary-600 font-bold">3</span>
-                    </div>
-                    <h3 className="font-medium text-gray-900">Download</h3>
-                    <p className="text-sm text-gray-600">
-                      Get comprehensive Excel reports with domain categorization and similarity analysis.
-                    </p>
-                  </div>
+            <div className="instructions">
+              <h2>How to Use the FYP Analysis System</h2>
+              <div className="instructions-grid">
+                <div className="instruction-step">
+                  <div className="step-number">1</div>
+                  <h3>Upload Data</h3>
+                  <p>Upload your Excel file containing FYP project data with titles and descriptions. The system accepts .xlsx, .xls, and .csv files.</p>
                 </div>
                 
-                <div className="mt-8 p-4 bg-primary-50 rounded-lg">
-                  <p className="text-sm text-primary-700">
-                    💡 <strong>Pro tip:</strong> Add your Gemini API key in settings for AI-powered domain categorization with detailed explanations!
-                  </p>
+                <div className="instruction-step">
+                  <div className="step-number">2</div>
+                  <h3>Analyze</h3>
+                  <p>Our system will automatically categorize projects across 15+ technical domains and find similar projects using advanced TF-IDF analysis.</p>
+                </div>
+                
+                <div className="instruction-step">
+                  <div className="step-number">3</div>
+                  <h3>Download</h3>
+                  <p>Get comprehensive Excel reports with domain categorization, similarity analysis, and detailed explanations for all findings.</p>
+                </div>
+              </div>
+              
+              <div className="pro-tip">
+                <p>💡 <strong>Pro tip:</strong> Add your Gemini API key in settings for AI-powered domain categorization with detailed explanations and higher accuracy!</p>
+              </div>
+              
+              <div className="feature-highlights">
+                <h3>Key Features</h3>
+                <div className="features-grid">
+                  <div className="feature-item">
+                    <span className="feature-icon">🤖</span>
+                    <h4>AI-Powered Analysis</h4>
+                    <p>Optional Gemini AI integration for intelligent project categorization</p>
+                  </div>
+                  <div className="feature-item">
+                    <span className="feature-icon">📊</span>
+                    <h4>15+ Domain Categories</h4>
+                    <p>Comprehensive categorization across AI/ML, Web Dev, IoT, Cybersecurity, and more</p>
+                  </div>
+                  <div className="feature-item">
+                    <span className="feature-icon">🔍</span>
+                    <h4>Similarity Detection</h4>
+                    <p>Advanced TF-IDF analysis to find similar projects with detailed explanations</p>
+                  </div>
+                  <div className="feature-item">
+                    <span className="feature-icon">📋</span>
+                    <h4>Multi-Sheet Reports</h4>
+                    <p>Detailed Excel reports organized by domains and similarity levels</p>
+                  </div>
                 </div>
               </div>
             </div>
