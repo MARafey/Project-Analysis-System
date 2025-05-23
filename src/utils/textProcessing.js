@@ -263,44 +263,185 @@ export function categorizeByKeywords(title, scope) {
   };
 }
 
-// Generate similarity explanation
+// Generate detailed similarity explanation with specific reasons
 export function generateSimilarityExplanation(proj1Id, proj2Id, score, overlappingDomains, text1, text2) {
   const explanationParts = [];
+  const reasons = [];
 
-  // Domain overlap explanation
-  if (overlappingDomains.length > 0) {
-    const domainStr = overlappingDomains.join(', ');
-    explanationParts.push(`Both projects belong to ${domainStr} domain(s)`);
-  }
-
-  // Find common keywords
-  const words1 = new Set(tokenize(text1));
-  const words2 = new Set(tokenize(text2));
+  // Preprocess texts for analysis
+  const tokens1 = tokenize(text1.toLowerCase());
+  const tokens2 = tokenize(text2.toLowerCase());
+  const words1 = new Set(tokens1);
+  const words2 = new Set(tokens2);
   const commonWords = [...words1].filter(word => words2.has(word));
 
-  // Filter meaningful common words
+  // Domain overlap analysis
+  if (overlappingDomains.length > 0) {
+    const domainStr = overlappingDomains.join(', ');
+    reasons.push(`✓ Domain Overlap: Both projects belong to ${domainStr} domain(s)`);
+  }  // Find technical keywords and technologies  
+  const technologyPatterns = [    // Programming Languages & Frameworks
+    'python', 'javascript', 'java', 'react', 'nodejs', 'django', 'flask', 'angular', 'vue',
+    'php', 'laravel', 'spring', 'html', 'css', 'bootstrap', 'flutter', 'kotlin', 'swift',
+    
+    // AI/ML Technologies
+    'tensorflow', 'pytorch', 'scikit-learn', 'opencv', 'pandas', 'numpy', 'matplotlib',
+    'machine learning', 'deep learning', 'neural network', 'nlp', 'computer vision',
+    'recommendation system', 'classification', 'clustering', 'prediction',
+    
+    // Databases & Cloud
+    'mysql', 'postgresql', 'mongodb', 'firebase', 'aws', 'azure', 'docker', 'kubernetes',
+    
+    // IoT & Hardware
+    'arduino', 'raspberry pi', 'sensor', 'bluetooth', 'wifi', 'rfid', 'microcontroller',
+    
+    // Development Concepts
+    'api', 'rest', 'graphql', 'microservices', 'authentication', 'encryption', 'blockchain',
+    'mobile app', 'web app', 'dashboard', 'admin panel', 'user interface'
+  ];
+  
+
+  const foundTechnologies = [];
+  technologyPatterns.forEach(tech => {
+    const regex = new RegExp(`\\b${tech}\\b`, 'gi');
+    if (text1.match(regex) && text2.match(regex)) {
+      foundTechnologies.push(tech);
+    }
+  });
+
+  if (foundTechnologies.length > 0) {
+    const techList = foundTechnologies.slice(0, 5).join(', ');
+    reasons.push(`✓ Shared Technologies: Both use ${techList}`);
+  }
+
+  // Find common functional features
+  const featureKeywords = [
+    'authentication', 'login', 'registration', 'dashboard', 'admin', 'user management',
+    'notification', 'alert', 'real-time', 'monitoring', 'analytics', 'reporting',
+    'search', 'filter', 'recommendation', 'payment', 'cart', 'checkout',
+    'chat', 'messaging', 'communication', 'social', 'sharing', 'feedback',
+    'security', 'encryption', 'backup', 'data protection', 'privacy'
+  ];
+
+  const commonFeatures = [];
+  featureKeywords.forEach(feature => {
+    const regex = new RegExp(`\\b${feature}\\b`, 'gi');
+    if (text1.match(regex) && text2.match(regex)) {
+      commonFeatures.push(feature);
+    }
+  });
+
+  if (commonFeatures.length > 0) {
+    const featureList = commonFeatures.slice(0, 4).join(', ');
+    reasons.push(`✓ Similar Features: Both implement ${featureList}`);
+  }
+
+  // Find common methodological approaches
+  const methodologyKeywords = [
+    'agile', 'waterfall', 'prototype', 'testing', 'deployment', 'development',
+    'design', 'implementation', 'analysis', 'research', 'survey', 'interview',
+    'evaluation', 'validation', 'optimization', 'integration', 'automation'
+  ];
+
+  const commonMethodologies = [];
+  methodologyKeywords.forEach(method => {
+    const regex = new RegExp(`\\b${method}\\b`, 'gi');
+    if (text1.match(regex) && text2.match(regex)) {
+      commonMethodologies.push(method);
+    }
+  });
+
+  if (commonMethodologies.length > 0) {
+    const methodList = commonMethodologies.slice(0, 3).join(', ');
+    reasons.push(`✓ Similar Methodology: Both use ${methodList} approaches`);
+  }
+
+  // Find common problem domains or application areas
+  const applicationAreas = [
+    'healthcare', 'education', 'business', 'ecommerce', 'social media', 'gaming',
+    'finance', 'banking', 'retail', 'transportation', 'logistics', 'manufacturing',
+    'agriculture', 'environment', 'energy', 'smart city', 'smart home'
+  ];
+
+  const commonAreas = [];
+  applicationAreas.forEach(area => {
+    const regex = new RegExp(`\\b${area}\\b`, 'gi');
+    if (text1.match(regex) && text2.match(regex)) {
+      commonAreas.push(area);
+    }
+  });
+
+  if (commonAreas.length > 0) {
+    const areaList = commonAreas.join(', ');
+    reasons.push(`✓ Target Domain: Both focus on ${areaList} applications`);
+  }
+
+  // Find common objectives or goals
+  const objectiveKeywords = [
+    'improve', 'enhance', 'optimize', 'automate', 'simplify', 'streamline',
+    'reduce cost', 'increase efficiency', 'better user experience', 'accessibility',
+    'scalability', 'performance', 'security', 'reliability', 'usability'
+  ];
+
+  const commonObjectives = [];
+  objectiveKeywords.forEach(objective => {
+    const regex = new RegExp(`\\b${objective}\\b`, 'gi');
+    if (text1.match(regex) && text2.match(regex)) {
+      commonObjectives.push(objective);
+    }
+  });
+
+  if (commonObjectives.length > 0) {
+    const objList = commonObjectives.slice(0, 3).join(', ');
+    reasons.push(`✓ Common Goals: Both aim to ${objList}`);
+  }
+
+  // Analyze text similarity level
   const meaningfulCommon = commonWords.filter(word => 
-    word.length > 3 && !['that', 'this', 'with', 'from', 'they', 'were', 'been', 'have', 'will', 'would'].includes(word)
+    word.length > 3 && 
+    !['that', 'this', 'with', 'from', 'they', 'were', 'been', 'have', 'will', 'would', 'using', 'based', 'system', 'project', 'development'].includes(word)
   );
 
-  if (meaningfulCommon.length > 0) {
-    if (meaningfulCommon.length > 5) {
-      explanationParts.push('Share multiple technical concepts and approaches');
-    } else {
-      explanationParts.push(`Share common concepts: ${meaningfulCommon.slice(0, 3).join(', ')}`);
+  if (meaningfulCommon.length > 8) {
+    reasons.push(`✓ High Textual Overlap: Share ${meaningfulCommon.length} significant common terms`);
+  } else if (meaningfulCommon.length > 4) {
+    const termList = meaningfulCommon.slice(0, 5).join(', ');
+    reasons.push(`✓ Conceptual Overlap: Share key terms including ${termList}`);
+  }
+
+  // Calculate detailed similarity metrics
+  const similarityLevel = getSimilarityLevel(score);
+  const scorePercentage = (score * 100).toFixed(1);
+
+  // Build comprehensive explanation
+  explanationParts.push(`SIMILARITY ANALYSIS (${scorePercentage}% match - ${similarityLevel} similarity):`);
+  
+  if (reasons.length > 0) {
+    explanationParts.push('\nSPECIFIC REASONS:');
+    reasons.forEach(reason => {
+      explanationParts.push(reason);
+    });
+  } else {
+    explanationParts.push('\nSPECIFIC REASONS:');
+    explanationParts.push('✓ Textual Similarity: Projects share conceptual approaches and terminology');
+    if (score > 0.5) {
+      explanationParts.push('✓ Methodological Overlap: Similar project structure and implementation approach');
     }
   }
 
-  // Similarity level explanation
+  // Add similarity interpretation
+  explanationParts.push('\nSIMILARITY INTERPRETATION:');
   if (score > 0.7) {
-    explanationParts.push('Very similar project objectives and methodologies');
+    explanationParts.push('→ Very High Similarity: Projects have nearly identical objectives, methodologies, and technical approaches. Consider reviewing for potential duplication or encouraging collaboration.');
   } else if (score > 0.5) {
-    explanationParts.push('Similar approach with some methodological overlap');
+    explanationParts.push('→ High Similarity: Projects share significant conceptual and technical overlap. May benefit from cross-referencing methodologies or coordinated development.');
+  } else if (score > 0.3) {
+    explanationParts.push('→ Moderate Similarity: Projects have some common elements but maintain distinct approaches. Could benefit from knowledge sharing.');
   } else {
-    explanationParts.push('Some conceptual similarities in approach');
+    explanationParts.push('→ Low Similarity: Projects share basic conceptual elements but are largely distinct in approach and implementation.');
   }
 
-  return explanationParts.join('. ') + '.';
+  return explanationParts.join('\n');
 }
 
 // Determine similarity level

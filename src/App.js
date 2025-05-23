@@ -511,7 +511,7 @@ function App() {
                           <th>Project 2</th>
                           <th>Similarity</th>
                           <th>Level</th>
-                          <th>Explanation</th>
+                          <th>Specific Reasons</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -525,9 +525,7 @@ function App() {
                                 {pair.similarityLevel}
                               </span>
                             </td>
-                            <td title={pair.explanation}>
-                              {pair.explanation.substring(0, 100)}...
-                            </td>
+                                                        <td title={pair.explanation}>                              {/* Extract and show first few specific reasons */}                              {(() => {                                const lines = pair.explanation.split('\n');                                const reasons = lines.filter(line => line.trim().startsWith('✓')).slice(0, 2);                                return reasons.length > 0                                   ? reasons.map(reason => reason.trim().substring(2)).join('; ') + (lines.filter(line => line.trim().startsWith('✓')).length > 2 ? '...' : '')                                  : pair.explanation.substring(0, 100) + '...';                              })()}                            </td>
                           </tr>
                         ))}
                       </tbody>

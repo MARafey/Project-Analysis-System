@@ -87,7 +87,7 @@ export function createExcelWorkbook(domainData, similarityData) {
     Object.entries(similarityGroups).forEach(([level, pairs]) => {
       if (pairs.length > 0) {
         const sheetName = `${level}_Similarity`;
-        const levelSheet = XLSX.utils.json_to_sheet(pairs);
+        const levelSheet = createDetailedSimilaritySheet(pairs);
         XLSX.utils.book_append_sheet(workbook, levelSheet, sheetName);
       }
     });
@@ -110,18 +110,84 @@ function createDomainSheet(domainData) {
   return XLSX.utils.json_to_sheet(sheetData);
 }
 
-// Create similarity analysis sheet
+// Create enhanced similarity analysis sheet with detailed breakdown
 function createSimilaritySheet(similarityData) {
-  const sheetData = similarityData.map(pair => ({
-    'Project 1 ID': pair.project1Id,
-    'Project 2 ID': pair.project2Id,
-    'Similarity Score': pair.similarityScore,
-    'Similarity Level': pair.similarityLevel,
-    'Overlapping Domains': pair.overlappingDomains.join(', '),
-    'Explanation': pair.explanation
-  }));
+  const sheetData = similarityData.map(pair => {
+    // Parse the detailed explanation to extract components
+    const explanation = pair.explanation || '';
+    const lines = explanation.split('\n');
+    
+    // Extract different sections from the explanation
+    let specificReasons = [];
+    let interpretation = '';
+    let analysisHeader = '';
+    
+    let currentSection = '';
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('SIMILARITY ANALYSIS')) {
+        analysisHeader = trimmed;
+        currentSection = 'analysis';
+      } else if (trimmed === 'SPECIFIC REASONS:') {
+        currentSection = 'reasons';
+      } else if (trimmed === 'SIMILARITY INTERPRETATION:') {
+        currentSection = 'interpretation';
+      } else if (trimmed.startsWith('✓') && currentSection === 'reasons') {
+        specificReasons.push(trimmed);
+      } else if (trimmed.startsWith('→') && currentSection === 'interpretation') {
+        interpretation = trimmed.substring(2).trim(); // Remove arrow
+      }
+    });
+
+    return {
+      'Project 1 ID': pair.project1Id,
+      'Project 2 ID': pair.project2Id,
+      'Similarity Score': `${(pair.similarityScore * 100).toFixed(1)}%`,
+      'Similarity Level': pair.similarityLevel,
+      'Overlapping Domains': pair.overlappingDomains.join(', '),
+      'Analysis Summary': analysisHeader,
+      'Specific Reasons': specificReasons.join(' | '),
+      'Interpretation': interpretation,
+      'Full Explanation': explanation
+    };
+  });
   
   return XLSX.utils.json_to_sheet(sheetData);
+}
+
+// Create detailed similarity sheet for level-specific sheets
+function createDetailedSimilaritySheet(pairs) {
+  return XLSX.utils.json_to_sheet(pairs.map(pair => {
+    // Parse explanation for detailed breakdown
+    const explanation = pair.explanation || '';
+    const lines = explanation.split('\n');
+    let specificReasons = [];
+    let interpretation = '';
+    
+    let currentSection = '';
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed === 'SPECIFIC REASONS:') {
+        currentSection = 'reasons';
+      } else if (trimmed === 'SIMILARITY INTERPRETATION:') {
+        currentSection = 'interpretation';
+      } else if (trimmed.startsWith('✓') && currentSection === 'reasons') {
+        specificReasons.push(trimmed);
+      } else if (trimmed.startsWith('→') && currentSection === 'interpretation') {
+        interpretation = trimmed.substring(2).trim();
+      }
+    });
+
+    return {
+      'Project 1 ID': pair.project1Id,
+      'Project 2 ID': pair.project2Id,
+      'Similarity Score': `${(pair.similarityScore * 100).toFixed(1)}%`,
+      'Overlapping Domains': pair.overlappingDomains.join(', '),
+      'Specific Reasons': specificReasons.join(' | '),
+      'Interpretation': interpretation,
+      'Full Explanation': explanation
+    };
+  }));
 }
 
 // Group projects by domains
@@ -220,13 +286,7 @@ export function exportSimilarityAnalysis(similarityData, filename = 'fyp_similar
     Object.entries(similarityGroups).forEach(([level, pairs]) => {
       if (pairs.length > 0) {
         const sheetName = `${level}_Similarity`;
-        const levelSheet = XLSX.utils.json_to_sheet(pairs.map(pair => ({
-          'Project 1 ID': pair.project1Id,
-          'Project 2 ID': pair.project2Id,
-          'Similarity Score': pair.similarityScore,
-          'Overlapping Domains': pair.overlappingDomains.join(', '),
-          'Explanation': pair.explanation
-        })));
+        const levelSheet = createDetailedSimilaritySheet(pairs);
         XLSX.utils.book_append_sheet(workbook, levelSheet, sheetName);
       }
     });

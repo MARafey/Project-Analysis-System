@@ -72,7 +72,7 @@ A comprehensive React-based application for analyzing Final Year Projects (FYPs)
 npm run build
 ```
 
-## 📚 How to Use
+## 🔍 Enhanced Similarity Analysis FeaturesThe system now provides **detailed, specific reasons** for why two FYPs are considered similar, including:### 🎯 Multi-Layer Analysis- **Technology Stack Detection**: Identifies shared programming languages, frameworks, and tools- **Feature Overlap Analysis**: Finds common functional requirements and capabilities - **Methodology Matching**: Detects similar development approaches and research methods- **Domain Targeting**: Identifies shared application areas and industries- **Goal Alignment**: Recognizes common project objectives and outcomes- **Textual Similarity**: Analyzes significant terminology and concept overlap### 📋 Comprehensive Reporting- **Structured Explanations**: Each similarity includes specific reasons with ✓ indicators- **Detailed Interpretations**: Actionable insights and recommendations for each pair- **Enhanced Excel Reports**: Multi-column breakdown with specific reasons, interpretations, and full explanations- **Interactive UI**: Preview of key reasons directly in the web interface### 🎚️ Similarity Levels with Context- **Very High (>70%)**: Nearly identical approaches - consider collaboration or review for duplication- **High (50-70%)**: Significant overlap - opportunities for cross-referencing methodologies- **Medium (30-50%)**: Some common elements - potential for knowledge sharing- **Low (<30%)**: Basic conceptual similarities - largely distinct approaches## 📚 How to Use
 
 ### 1. Upload Data
 
@@ -197,13 +197,7 @@ The `build` folder contains static files that can be served by any web server:
 3. **Multi-domain Support**: Projects can belong to multiple domains
 4. **Confidence Scoring**: Numerical confidence for categorization decisions
 
-### Similarity Analysis
-
-1. **Text Preprocessing**: Tokenization, stopword removal, normalization
-2. **TF-IDF Vectorization**: Convert text to numerical vectors
-3. **Cosine Similarity**: Calculate similarity scores between project pairs
-4. **Threshold Filtering**: Only show significant similarities (>30%)
-5. **Level Classification**: Very High (>70%), High (50-70%), Medium (30-50%), Low (<30%)
+### Enhanced Similarity Analysis1. **Text Preprocessing**: Tokenization, stopword removal, normalization2. **TF-IDF Vectorization**: Convert text to numerical vectors3. **Cosine Similarity**: Calculate similarity scores between project pairs4. **Detailed Reason Analysis**: Multi-layer similarity detection including: - **Technology Stack**: Shared programming languages, frameworks, and tools - **Feature Overlap**: Common functional requirements and capabilities - **Methodology**: Similar development approaches and research methods - **Application Domain**: Target industries and use cases - **Project Goals**: Shared objectives and outcomes - **Textual Overlap**: Significant common terminology and concepts5. **Comprehensive Explanations**: Each similarity pair includes: - Specific reasons with checkmark indicators (✓) - Detailed interpretation and recommendations - Actionable insights for project coordination6. **Level Classification**: Very High (>70%), High (50-70%), Medium (30-50%), Low (<30%)
 
 ## 🔍 Troubleshooting
 
