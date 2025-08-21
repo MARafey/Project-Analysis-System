@@ -9,6 +9,7 @@ import { initializeGemini, isGeminiAvailable, batchCategorizeWithGemini } from '
 
 // Components
 import PanelAllocation from './components/PanelAllocation';
+import ConstraintBasedPanelAllocation from './components/ConstraintBasedPanelAllocation';
 
 function App() {
   // State management
@@ -26,6 +27,7 @@ function App() {
   const [useGemini, setUseGemini] = useState(false);
   const [showPanelAllocation, setShowPanelAllocation] = useState(false);
   const [panelAllocationResult, setPanelAllocationResult] = useState(null);
+  const [showConstraintAllocation, setShowConstraintAllocation] = useState(false);
 
   // Handle file upload
   const handleFileUpload = useCallback(async (file) => {
@@ -466,6 +468,8 @@ function App() {
                   >
                     🏛️ {showPanelAllocation ? 'Hide' : 'Show'} Panel Allocation
                   </button>
+
+
                 </div>
               </div>
 
@@ -572,27 +576,89 @@ function App() {
             </div>
           )}
 
+          {/* Separate Panel Creation System */}
+          <div className="panel-creation-section">
+            <div className="card">
+              <div className="panel-creation-header">
+                <h2>🏛️ Panel Creation System</h2>
+                <p className="section-description">
+                  Create evaluation panels from instructor-project data using constraint-based allocation. 
+                  This system works independently from the FYP analysis above.
+                </p>
+              </div>
+
+              <div className="panel-creation-toggle">
+                <button 
+                  onClick={() => setShowConstraintAllocation(!showConstraintAllocation)}
+                  className="btn btn-primary btn-large"
+                >
+                  {showConstraintAllocation ? '🔽 Hide Panel Creation' : '🔼 Start Panel Creation'}
+                </button>
+              </div>
+
+              {showConstraintAllocation && (
+                <ConstraintBasedPanelAllocation />
+              )}
+            </div>
+          </div>
+
           {/* Instructions */}
-          {projectsData.length === 0 && !isAnalyzing && (
+          {projectsData.length === 0 && !isAnalyzing && !showConstraintAllocation && (
             <div className="instructions">
-              <h2>How to Use the FYP Analysis System</h2>
-              <div className="instructions-grid">
-                <div className="instruction-step">
-                  <div className="step-number">1</div>
-                  <h3>Upload Data</h3>
-                  <p>Upload your Excel file containing FYP project data with titles and descriptions. The system accepts .xlsx, .xls, and .csv files.</p>
+              <h2>🎓 Two Powerful Systems in One Platform</h2>
+              
+              <div className="systems-overview">
+                <div className="system-card">
+                  <div className="system-icon">📊</div>
+                  <h3>FYP Analysis System</h3>
+                  <p>Analyze project data for domain categorization and similarity detection</p>
+                  <div className="system-features">
+                    <div className="feature">✓ AI-powered domain categorization</div>
+                    <div className="feature">✓ Similarity detection between projects</div>
+                    <div className="feature">✓ Multi-sheet Excel reports</div>
+                    <div className="feature">✓ Support for large datasets</div>
+                  </div>
+                  <div className="system-action">
+                    <strong>👆 Upload your Excel file above to get started</strong>
+                  </div>
                 </div>
-                
-                <div className="instruction-step">
-                  <div className="step-number">2</div>
-                  <h3>Analyze</h3>
-                  <p>Our system will automatically categorize projects across 15+ technical domains and find similar projects using advanced TF-IDF analysis.</p>
+
+                <div className="system-card">
+                  <div className="system-icon">🏛️</div>
+                  <h3>Panel Creation System</h3>
+                  <p>Create evaluation panels with instructor-project constraint management</p>
+                  <div className="system-features">
+                    <div className="feature">✓ Text file input for instructor-project mapping</div>
+                    <div className="feature">✓ Hard & soft constraint management</div>
+                    <div className="feature">✓ Automatic overlap detection</div>
+                    <div className="feature">✓ Optimized instructor assignment</div>
+                  </div>
+                  <div className="system-action">
+                    <strong>👆 Use the Panel Creation section above</strong>
+                  </div>
                 </div>
-                
-                <div className="instruction-step">
-                  <div className="step-number">3</div>
-                  <h3>Download</h3>
-                  <p>Get comprehensive Excel reports with domain categorization, similarity analysis, and detailed explanations for all findings.</p>
+              </div>
+
+              <div className="getting-started">
+                <h3>🚀 Getting Started</h3>
+                <div className="instructions-grid">
+                  <div className="instruction-step">
+                    <div className="step-number">1</div>
+                    <h4>Choose Your System</h4>
+                    <p>Use FYP Analysis for project similarity analysis, or Panel Creation for organizing evaluation panels.</p>
+                  </div>
+                  
+                  <div className="instruction-step">
+                    <div className="step-number">2</div>
+                    <h4>Upload Your Data</h4>
+                    <p>Excel files for FYP analysis, or text files with instructor-project mappings for panel creation.</p>
+                  </div>
+                  
+                  <div className="instruction-step">
+                    <div className="step-number">3</div>
+                    <h4>Get Results</h4>
+                    <p>Download comprehensive reports with all analysis results and panel allocations.</p>
+                  </div>
                 </div>
               </div>
               

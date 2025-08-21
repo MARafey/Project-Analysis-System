@@ -447,6 +447,126 @@ export function exportPanelAllocationReport(panelReport, filename = 'panel_alloc
   }
 }
 
+// Export constraint-based panel allocation results to Excel
+export function exportConstraintBasedPanelAllocation(allocationResult, filename = 'panel_allocation_constraint_based.xlsx') {
+  try {
+    const workbook = XLSX.utils.book_new();
+    const { panels, instructorAssignments, summary } = allocationResult;
+
+    // Sheet 1: Panel Allocation
+    const panelAllocationData = panels.map(panel => {
+      const groupsList = panel.groups.map(group => 
+        `${group.id} (${group.projects.length} projects: ${group.projects.join(', ')})`
+      ).join(' | ');
+      
+      const instructorsList = panel.instructors.join(', ');
+      
+      return {
+        'Panel Number': panel.panelNumber,
+        'Number of Groups': panel.constraints.actualGroups,
+        'Total Projects': panel.totalProjects,
+        'Groups': groupsList,
+        'Assigned Instructors': instructorsList,
+        'Instructor Count': panel.instructors.length,
+        'Session Duration (min)': panel.sessionDuration,
+        'Groups vs Target': `${panel.constraints.actualGroups}/${panel.constraints.desiredGroups}`,
+        'Instructors vs Limit': `${panel.instructors.length}/${panel.constraints.maxInstructors}`
+      };
+    });
+    
+    const panelSheet = XLSX.utils.json_to_sheet(panelAllocationData);
+    XLSX.utils.book_append_sheet(workbook, panelSheet, 'Panel Allocation');
+
+    // Sheet 2: Instructor Assignments
+    const instructorAssignmentData = instructorAssignments.map((assignment, index) => ({
+      'S.No': index + 1,
+      'Instructor Name': assignment.instructorName,
+      'Panel Assigned': assignment.panelAssigned || 'Not Assigned',
+      'Status': assignment.status,
+      'Project Count': assignment.projectCount,
+      'Supervised Projects': assignment.supervisedProjects.join(', ')
+    }));
+    
+    const instructorSheet = XLSX.utils.json_to_sheet(instructorAssignmentData);
+    XLSX.utils.book_append_sheet(workbook, instructorSheet, 'Instructor Assignments');
+
+    // Sheet 3: Summary
+    const summaryData = [
+      { 'Metric': 'Total Panels', 'Value': summary.totalPanels },
+      { 'Metric': 'Total Groups', 'Value': summary.totalGroups },
+      { 'Metric': 'Total Instructors', 'Value': summary.totalInstructors },
+      { 'Metric': 'Average Groups per Panel', 'Value': summary.averageGroupsPerPanel },
+      { 'Metric': 'Average Instructors per Panel', 'Value': summary.averageInstructorsPerPanel },
+      { 'Metric': '', 'Value': '' }, // Separator
+      { 'Metric': 'HARD CONSTRAINTS', 'Value': '' },
+      { 'Metric': 'Number of Panels', 'Value': `${summary.constraints.hard.numberOfPanels} (Satisfied: ✓)` },
+      { 'Metric': 'Instructors per Panel (Max)', 'Value': `${summary.constraints.hard.instructorsPerPanel} (Satisfied: ✓)` },
+      { 'Metric': '', 'Value': '' }, // Separator
+      { 'Metric': 'SOFT CONSTRAINTS', 'Value': '' },
+      { 'Metric': 'Groups per Panel (Desired)', 'Value': summary.constraints.soft.groupsPerPanel },
+      { 'Metric': 'Soft Constraint Exceeded', 'Value': summary.constraints.soft.exceeded ? 'Yes' : 'No' },
+      { 'Metric': 'Max Groups in Any Panel', 'Value': summary.constraints.soft.maxGroupsInAnyPanel },
+      { 'Metric': 'Reason for Exceeding', 'Value': summary.constraints.soft.reason || 'N/A' },
+      { 'Metric': '', 'Value': '' }, // Separator
+      { 'Metric': 'ALLOCATION RESULTS', 'Value': '' },
+      { 'Metric': 'Successful Allocations', 'Value': summary.allocationSuccess.successful },
+      { 'Metric': 'Failed Allocations', 'Value': summary.allocationSuccess.failed },
+      { 'Metric': 'Warnings', 'Value': summary.allocationSuccess.warnings },
+      { 'Metric': 'Constraint Violations', 'Value': summary.allocationSuccess.constraintViolations },
+      { 'Metric': '', 'Value': '' }, // Separator
+      { 'Metric': 'Generated At', 'Value': summary.generatedAt }
+    ];
+    
+    const summarySheet = XLSX.utils.json_to_sheet(summaryData);
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+
+    // Sheet 4: Detailed Group Information
+    const detailedGroupData = [];
+    panels.forEach(panel => {
+      panel.groups.forEach(group => {
+        detailedGroupData.push({
+          'Panel Number': panel.panelNumber,
+          'Group ID': group.id,
+          'Project Count': group.projects.length,
+          'Projects': group.projects.join(', '),
+          'Supervisors': group.supervisors.join(', '),
+          'Primary Supervisor': group.primarySupervisor
+        });
+      });
+    });
+    
+    if (detailedGroupData.length > 0) {
+      const detailedGroupSheet = XLSX.utils.json_to_sheet(detailedGroupData);
+      XLSX.utils.book_append_sheet(workbook, detailedGroupSheet, 'Detailed Groups');
+    }
+
+    // Sheet 5: Allocation Log (if there are results)
+    if (allocationResult.allocationResults) {
+      const logData = [
+        ...allocationResult.allocationResults.successful.map(msg => ({ 'Type': 'Success', 'Message': msg })),
+        ...allocationResult.allocationResults.failed.map(msg => ({ 'Type': 'Failed', 'Message': msg })),
+        ...allocationResult.allocationResults.warnings.map(msg => ({ 'Type': 'Warning', 'Message': msg })),
+        ...allocationResult.allocationResults.constraintViolations.map(msg => ({ 'Type': 'Constraint Violation', 'Message': msg }))
+      ];
+      
+      if (logData.length > 0) {
+        const logSheet = XLSX.utils.json_to_sheet(logData);
+        XLSX.utils.book_append_sheet(workbook, logSheet, 'Allocation Log');
+      }
+    }
+
+    // Convert to blob and download
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, filename);
+
+    return true;
+  } catch (error) {
+    console.error('Failed to export constraint-based panel allocation:', error);
+    return false;
+  }
+}
+
 // Create sample Excel file for testing
 export function createSampleExcelFile() {
   const sampleData = [
