@@ -5,7 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 // Utils
 import { readExcelFile, exportDomainCategorization, exportSimilarityAnalysis, exportCombinedReports, createSampleExcelFile } from './utils/excelUtils';
 import { TFIDFVectorizer, cosineSimilarity, categorizeByKeywords, generateSimilarityExplanation, getSimilarityLevel } from './utils/textProcessing';
-import { initializeGemini, isGeminiAvailable, batchCategorizeWithGemini } from './utils/geminiApi';
+import { initializeGemini, isGeminiAvailable, batchCategorizeWithGemini, batchAnalyzeSimilarityWithGemini } from './utils/geminiApi';
 
 // Components
 import PanelAllocation from './components/PanelAllocation';
@@ -26,8 +26,9 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [useGemini, setUseGemini] = useState(false);
   const [showPanelAllocation, setShowPanelAllocation] = useState(false);
-  const [panelAllocationResult, setPanelAllocationResult] = useState(null);
+  // Removed unused state variable panelAllocationResult
   const [showConstraintAllocation, setShowConstraintAllocation] = useState(false);
+  const [useGeminiForSimilarity, setUseGeminiForSimilarity] = useState(false);
 
   // Handle file upload
   const handleFileUpload = useCallback(async (file) => {
@@ -174,47 +175,73 @@ function App() {
       setCurrentStep(3);
       setAnalysisStatus('Calculating project similarities...');
       
-      const texts = projectsData.map(p => `${p.projectTitle} ${p.projectScope}`);
-      const vectorizer = new TFIDFVectorizer({ maxFeatures: 1000, minDf: 1, maxDf: 0.95 });
-      const tfidfVectors = vectorizer.fitTransform(texts);
+      let similarityResults = [];
       
-      const similarityResults = [];
-      const threshold = 0.3;
-      
-      for (let i = 0; i < tfidfVectors.length; i++) {
-        for (let j = i + 1; j < tfidfVectors.length; j++) {
-          const similarity = cosineSimilarity(tfidfVectors[i], tfidfVectors[j]);
-          
-          if (similarity > threshold) {
-            const project1 = domainResults[i];
-            const project2 = domainResults[j];
-            
-            const overlappingDomains = project1.domains.filter(d => project2.domains.includes(d));
-            const similarityLevel = getSimilarityLevel(similarity);
-            
-            const explanation = generateSimilarityExplanation(
-              project1.projectId,
-              project2.projectId,
-              similarity,
-              overlappingDomains,
-              texts[i],
-              texts[j]
-            );
-            
-            similarityResults.push({
-              project1Id: project1.projectId,
-              project2Id: project2.projectId,
-              similarityScore: similarity,
-              similarityLevel,
-              overlappingDomains,
-              explanation
-            });
-          }
+      if (useGemini && isGeminiAvailable() && useGeminiForSimilarity) {
+        // Use Gemini AI for enhanced similarity analysis
+        setAnalysisStatus('Using Gemini AI for advanced similarity analysis...');
+        
+        try {
+          similarityResults = await batchAnalyzeSimilarityWithGemini(
+            domainResults,
+            (current, total, comparison) => {
+              setAnalysisStatus(`Analyzing similarities ${current}/${total}: ${comparison}`);
+            }
+          );
+        } catch (error) {
+          console.error('Gemini similarity analysis failed, falling back to TF-IDF:', error);
+          toast.warning('Gemini analysis failed, using TF-IDF fallback');
+          // Use TF-IDF fallback for this analysis
         }
       }
       
-      // Sort by similarity score (descending)
-      similarityResults.sort((a, b) => b.similarityScore - a.similarityScore);
+      if (!useGeminiForSimilarity || similarityResults.length === 0) {
+        // Use traditional TF-IDF analysis
+        setAnalysisStatus('Using TF-IDF similarity analysis...');
+        
+        const texts = projectsData.map(p => `${p.projectTitle} ${p.projectScope}`);
+        const vectorizer = new TFIDFVectorizer({ maxFeatures: 1000, minDf: 1, maxDf: 0.95 });
+        const tfidfVectors = vectorizer.fitTransform(texts);
+        
+        const threshold = 0.3;
+        
+        for (let i = 0; i < tfidfVectors.length; i++) {
+          for (let j = i + 1; j < tfidfVectors.length; j++) {
+            const similarity = cosineSimilarity(tfidfVectors[i], tfidfVectors[j]);
+            
+            if (similarity > threshold) {
+              const project1 = domainResults[i];
+              const project2 = domainResults[j];
+              
+              const overlappingDomains = project1.domains.filter(d => project2.domains.includes(d));
+              const similarityLevel = getSimilarityLevel(similarity);
+              
+              const explanation = generateSimilarityExplanation(
+                project1.projectId,
+                project2.projectId,
+                similarity,
+                overlappingDomains,
+                texts[i],
+                texts[j]
+              );
+              
+              similarityResults.push({
+                project1Id: project1.projectId,
+                project2Id: project2.projectId,
+                similarityScore: similarity,
+                similarityLevel,
+                overlappingDomains,
+                explanation,
+                analysisMethod: 'tfidf'
+              });
+            }
+          }
+        }
+        
+        // Sort by similarity score (descending)
+        similarityResults.sort((a, b) => b.similarityScore - a.similarityScore);
+      }
+      
       setSimilarityResults(similarityResults);
       
       // Step 4: Complete
@@ -237,7 +264,7 @@ function App() {
       setAnalysisStatus('');
       toast.error(`Analysis failed: ${err.message}`);
     }
-  }, [projectsData, useGemini]);
+  }, [projectsData, useGemini, useGeminiForSimilarity]);
 
   // Download handlers
   const handleDownloadDomains = useCallback(() => {
@@ -272,15 +299,7 @@ function App() {
     toast.success('Sample Excel file created and downloaded!');
   }, []);
 
-  // Handle panel allocation completion
-  const handlePanelAllocationComplete = useCallback((result) => {
-    setPanelAllocationResult(result);
-    if (result.success) {
-      toast.success('Panel allocation completed successfully!');
-    } else {
-      toast.error(`Panel allocation failed: ${result.error}`);
-    }
-  }, []);
+  // Removed unused handlePanelAllocationComplete function
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -350,6 +369,20 @@ function App() {
                 {useGemini && isGeminiAvailable() && (
                   <div className="success-message">
                     <p>✅ Gemini AI is active and ready</p>
+                    
+                    <div className="form-group">
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={useGeminiForSimilarity}
+                          onChange={(e) => setUseGeminiForSimilarity(e.target.checked)}
+                        />
+                        <span>Use Gemini AI for enhanced similarity analysis</span>
+                      </label>
+                      <p className="help-text">
+                        Enable for more detailed project comparisons using AI (slower but more accurate)
+                      </p>
+                    </div>
                   </div>
                 )}
                 
@@ -416,22 +449,72 @@ function App() {
             </div>
           )}
 
-          {/* Progress Tracker */}
+          {/* Enhanced Progress Tracker */}
           {isAnalyzing && (
-            <div className="card">
-              <h3>Analysis Progress</h3>
-              <div className="progress-bar">
-                <div 
-                  className="progress-fill"
-                  style={{ width: `${(currentStep / 4) * 100}%` }}
-                ></div>
+            <div className="enhanced-card">
+              <div className="enhanced-card-header">
+                <h3 className="enhanced-card-title">🔄 Analysis in Progress</h3>
               </div>
-              <p className="progress-text">{analysisStatus}</p>
-              {currentProject > 0 && totalProjects > 0 && (
-                <p className="progress-detail">
-                  Processing project {currentProject} of {totalProjects}
-                </p>
-              )}
+              <div className="enhanced-card-body">
+                <div className="loading-container">
+                  <div className="loading-spinner"></div>
+                  <div className="loading-text">{analysisStatus}</div>
+                  <div className="loading-subtext">
+                    {currentStep === 1 && 'Categorizing projects by domain...'}
+                    {currentStep === 2 && 'Analyzing project similarities...'}
+                    {currentStep === 3 && 'Processing with AI enhancement...'}
+                    {currentStep === 4 && 'Finalizing results...'}
+                  </div>
+                  
+                  <div className="progress-container">
+                    <div className="progress-bar">
+                      <div 
+                        className="progress-fill" 
+                        style={{ width: `${(currentStep / 4) * 100}%` }}
+                      ></div>
+                    </div>
+                    <div className="progress-text">
+                      <span>Step {currentStep} of 4</span>
+                      <span className="progress-percentage">{Math.round((currentStep / 4) * 100)}%</span>
+                    </div>
+                  </div>
+
+                  <div className="progress-steps">
+                    <div className={`progress-step ${currentStep >= 1 ? 'completed' : ''}`}>
+                      <div className="progress-step-icon">1</div>
+                      <div className="progress-step-text">Domain Categorization</div>
+                    </div>
+                    <div className={`progress-step ${currentStep >= 2 ? 'completed' : currentStep === 1 ? 'active' : ''}`}>
+                      <div className="progress-step-icon">2</div>
+                      <div className="progress-step-text">Similarity Analysis</div>
+                    </div>
+                    <div className={`progress-step ${currentStep >= 3 ? 'completed' : currentStep === 2 ? 'active' : ''}`}>
+                      <div className="progress-step-icon">3</div>
+                      <div className="progress-step-text">AI Enhancement</div>
+                    </div>
+                    <div className={`progress-step ${currentStep >= 4 ? 'completed' : currentStep === 3 ? 'active' : ''}`}>
+                      <div className="progress-step-icon">4</div>
+                      <div className="progress-step-text">Results Generation</div>
+                    </div>
+                  </div>
+
+                  {currentProject > 0 && totalProjects > 0 && (
+                    <div className="project-progress">
+                      <p className="progress-detail">
+                        📊 Processing project {currentProject} of {totalProjects}
+                      </p>
+                      <div className="mini-progress">
+                        <div className="mini-progress-bar">
+                          <div 
+                            className="mini-progress-fill" 
+                            style={{ width: `${(currentProject / totalProjects) * 100}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -467,6 +550,23 @@ function App() {
                     className="btn btn-secondary"
                   >
                     🏛️ {showPanelAllocation ? 'Hide' : 'Show'} Panel Allocation
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                      setShowConstraintAllocation(true);
+                      // Scroll to panel creation section
+                      setTimeout(() => {
+                        const panelSection = document.querySelector('.panel-creation-section');
+                        if (panelSection) {
+                          panelSection.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }, 100);
+                    }}
+                    className="btn btn-primary btn-large"
+                    style={{ marginLeft: '10px', fontWeight: 'bold' }}
+                  >
+                    🚀 Generate Evaluation Panels
                   </button>
 
 
@@ -537,6 +637,7 @@ function App() {
                           <th>Project 2</th>
                           <th>Similarity</th>
                           <th>Level</th>
+                          <th>Method</th>
                           <th>Specific Reasons</th>
                         </tr>
                       </thead>
@@ -551,7 +652,21 @@ function App() {
                                 {pair.similarityLevel}
                               </span>
                             </td>
-                                                        <td title={pair.explanation}>                              {/* Extract and show first few specific reasons */}                              {(() => {                                const lines = pair.explanation.split('\n');                                const reasons = lines.filter(line => line.trim().startsWith('✓')).slice(0, 2);                                return reasons.length > 0                                   ? reasons.map(reason => reason.trim().substring(2)).join('; ') + (lines.filter(line => line.trim().startsWith('✓')).length > 2 ? '...' : '')                                  : pair.explanation.substring(0, 100) + '...';                              })()}                            </td>
+                            <td>
+                              <span className={`method-badge ${pair.analysisMethod === 'gemini_ai' ? 'gemini-ai' : 'tfidf'}`}>
+                                {pair.analysisMethod === 'gemini_ai' ? '🤖 AI' : '📊 TF-IDF'}
+                              </span>
+                            </td>
+                            <td title={pair.explanation}>
+                              {/* Extract and show first few specific reasons */}
+                              {(() => {
+                                const lines = pair.explanation.split('\n');
+                                const reasons = lines.filter(line => line.trim().startsWith('✓')).slice(0, 2);
+                                return reasons.length > 0
+                                  ? reasons.map(reason => reason.trim().substring(2)).join('; ') + (lines.filter(line => line.trim().startsWith('✓')).length > 2 ? '...' : '')
+                                  : pair.explanation.substring(0, 100) + '...';
+                              })()}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -570,43 +685,49 @@ function App() {
                 <PanelAllocation
                   projects={domainResults}
                   similarityResults={similarityResults}
-                  onAllocationComplete={handlePanelAllocationComplete}
                 />
               )}
             </div>
           )}
 
-          {/* Separate Panel Creation System */}
-          <div className="panel-creation-section">
-            <div className="card">
-              <div className="panel-creation-header">
-                <h2>🏛️ Panel Creation System</h2>
-                <p className="section-description">
-                  Create evaluation panels from instructor-project data using constraint-based allocation. 
-                  For optimal results, run FYP analysis first to enable similarity-based grouping.
-                </p>
-              </div>
+          {/* Separate Panel Creation System - Only show if no FYP analysis is loaded or analysis is complete */}
+          {(projectsData.length === 0 || (domainResults.length > 0 && !isAnalyzing)) && (
+            <div className="panel-creation-section">
+              <div className="card">
+                <div className="panel-creation-header">
+                  <h2>🏛️ Panel Creation System</h2>
+                  <p className="section-description">
+                    Create evaluation panels from instructor-project data using constraint-based allocation. 
+                    {projectsData.length === 0 ? 
+                      'You can use this independently or run FYP analysis first for similarity-based grouping.' :
+                      'FYP analysis complete - you can now create optimized panels with similarity data.'
+                    }
+                  </p>
+                </div>
 
-              <div className="panel-creation-toggle">
-                <button 
-                  onClick={() => setShowConstraintAllocation(!showConstraintAllocation)}
-                  className="btn btn-primary btn-large"
-                >
-                  {showConstraintAllocation ? '🔽 Hide Panel Creation' : '🔼 Start Panel Creation'}
-                </button>
-              </div>
+                <div className="panel-creation-toggle">
+                  <button 
+                    onClick={() => setShowConstraintAllocation(!showConstraintAllocation)}
+                    className="btn btn-primary btn-large"
+                  >
+                    {showConstraintAllocation ? '🔽 Hide Panel Creation' : '🔼 Start Panel Creation'}
+                  </button>
+                </div>
 
-              {showConstraintAllocation && (
-                <ConstraintBasedPanelAllocation 
-                  similarityResults={similarityResults}
-                  hasFYPAnalysis={similarityResults && similarityResults.length > 0}
-                />
-              )}
+                {showConstraintAllocation && (
+                  <ConstraintBasedPanelAllocation 
+                    similarityResults={similarityResults}
+                    hasFYPAnalysis={similarityResults && similarityResults.length > 0}
+                    excelData={projectsData}
+                    domainResults={domainResults}
+                  />
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Instructions */}
-          {projectsData.length === 0 && !isAnalyzing && !showConstraintAllocation && (
+          {/* Instructions - Only show when no data is loaded and not analyzing */}
+          {projectsData.length === 0 && !isAnalyzing && (
             <div className="instructions">
               <h2>🎓 Two Powerful Systems in One Platform</h2>
               
@@ -643,23 +764,20 @@ function App() {
               </div>
 
               <div className="getting-started">
-                <h3>🚀 Getting Started</h3>
+                <h3>Getting Started</h3>
                 <div className="instructions-grid">
                   <div className="instruction-step">
                     <div className="step-number">1</div>
-                    <h4>Choose Your System</h4>
                     <p>Use FYP Analysis for project similarity analysis, or Panel Creation for organizing evaluation panels.</p>
                   </div>
                   
                   <div className="instruction-step">
                     <div className="step-number">2</div>
-                    <h4>Upload Your Data</h4>
                     <p>Excel files for FYP analysis, or text files with instructor-project mappings for panel creation.</p>
                   </div>
                   
                   <div className="instruction-step">
                     <div className="step-number">3</div>
-                    <h4>Get Results</h4>
                     <p>Download comprehensive reports with all analysis results and panel allocations.</p>
                   </div>
                 </div>

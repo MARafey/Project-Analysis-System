@@ -1,8 +1,17 @@
 /**
- * Text File Parser for Instructor and Project Data
+ * Text File Parser for Instructor Lists
  * 
- * This module parses text files containing instructor and project supervision information
- * and converts them into a structured format for panel allocation.
+ * This module parses text files containing instructor names and automatically extracts
+ * their project supervision information from Excel data for panel allocation.
+ * 
+ * Features:
+ * - Auto-splits text on title keywords (Dr, Prof, Mr, Ms, Mrs)
+ * - Smart formatting of instructor names
+ * - Requires Excel data to be uploaded first
+ * 
+ * Expected format: 
+ * - One instructor name per line, OR
+ * - Multiple instructors in any format (auto-split enabled)
  */
 
 /**
@@ -13,23 +22,112 @@
  */
 function extractProjectsForInstructor(instructorName, excelData) {
   if (!excelData || !Array.isArray(excelData)) {
+    console.warn('Invalid Excel data provided to extractProjectsForInstructor');
     return [];
   }
 
   const projects = [];
   const normalizedInstructorName = normalizeInstructorName(instructorName);
 
-  excelData.forEach(row => {
-    const supervisor = normalizeInstructorName(row.Supervisor || '');
-    const coSupervisor = normalizeInstructorName(row['Co-Supervisor'] || '');
-    const projectTitle = row['Project Title'] || row.projectTitle || row.Short_Title || row.projectId || '';
+  console.log(`Looking for instructor: "${instructorName}" (normalized: "${normalizedInstructorName}")`);
 
-    if (projectTitle && (supervisor === normalizedInstructorName || coSupervisor === normalizedInstructorName)) {
+  excelData.forEach((row, index) => {
+    // Get supervisor columns with case-insensitive fallback
+    const supervisor = getSupervisorColumn(row, 'supervisor') || '';
+    const coSupervisor = getSupervisorColumn(row, 'co-supervisor') || '';
+    
+    const normalizedSupervisor = normalizeInstructorName(supervisor);
+    const normalizedCoSupervisor = normalizeInstructorName(coSupervisor);
+    
+    // Get project title with multiple fallbacks
+    const projectTitle = getProjectTitleColumn(row) || '';
+
+    if (index === 0) {
+      console.log('Sample row columns:', Object.keys(row));
+      console.log('Sample supervisor:', supervisor);
+      console.log('Sample co-supervisor:', coSupervisor);
+    }
+
+    if (projectTitle && (normalizedSupervisor === normalizedInstructorName || normalizedCoSupervisor === normalizedInstructorName)) {
       projects.push(projectTitle);
+      console.log(`Found project "${projectTitle}" for instructor "${instructorName}"`);
     }
   });
 
+  console.log(`Found ${projects.length} projects for "${instructorName}":`, projects);
   return [...new Set(projects)]; // Remove duplicates
+}
+
+/**
+ * Get supervisor column with case-insensitive matching
+ * @param {Object} row - Excel row data
+ * @param {string} type - 'supervisor' or 'co-supervisor'
+ * @returns {string} Supervisor name
+ */
+function getSupervisorColumn(row, type) {
+  const keys = Object.keys(row);
+  
+  if (type === 'supervisor') {
+    // Look for exact match first, then case-insensitive
+    return row['Supervisor'] || 
+           row['supervisor'] || 
+           row['SUPERVISOR'] ||
+           keys.find(key => key.toLowerCase().trim() === 'supervisor') ? row[keys.find(key => key.toLowerCase().trim() === 'supervisor')] : '';
+  } else if (type === 'co-supervisor') {
+    // Look for exact match first, then case-insensitive
+    return row['Co-Supervisor'] || 
+           row['coSupervisor'] ||
+           row['co-supervisor'] || 
+           row['CO-SUPERVISOR'] ||
+           row['Co-supervisor'] ||
+           row['co_supervisor'] ||
+           keys.find(key => key.toLowerCase().replace(/[-_\s]/g, '') === 'cosupervisor') ? row[keys.find(key => key.toLowerCase().replace(/[-_\s]/g, '') === 'cosupervisor')] : '';
+  }
+  
+  return '';
+}
+
+/**
+ * Get project title column with multiple fallbacks
+ * @param {Object} row - Excel row data
+ * @returns {string} Project title
+ */
+function getProjectTitleColumn(row) {
+  const keys = Object.keys(row);
+  
+  // Try exact matches first
+  return row['Project Title'] || 
+         row['project title'] || 
+         row['PROJECT TITLE'] ||
+         row['Project_Title'] ||
+         row['projectTitle'] ||
+         row['Short_Title'] || 
+         row['short_title'] ||
+         row['Short Title'] ||
+         row['projectId'] ||
+         // Case-insensitive search
+         keys.find(key => key.toLowerCase().includes('project') && key.toLowerCase().includes('title')) ? row[keys.find(key => key.toLowerCase().includes('project') && key.toLowerCase().includes('title'))] : 
+         keys.find(key => key.toLowerCase().includes('title')) ? row[keys.find(key => key.toLowerCase().includes('title'))] : '';
+}
+
+/**
+ * Get project scope column with multiple fallbacks
+ * @param {Object} row - Excel row data
+ * @returns {string} Project scope
+ */
+function getProjectScopeColumn(row) {
+  const keys = Object.keys(row);
+  
+  // Try exact matches first
+  return row['Project Scope'] || 
+         row['project scope'] || 
+         row['PROJECT SCOPE'] ||
+         row['Project_Scope'] ||
+         row['projectScope'] ||
+         row['scope'] ||
+         row['Scope'] ||
+         // Case-insensitive search
+         keys.find(key => key.toLowerCase().includes('scope')) ? row[keys.find(key => key.toLowerCase().includes('scope'))] : '';
 }
 
 /**
@@ -49,16 +147,152 @@ function normalizeInstructorName(name) {
 }
 
 /**
+ * Format instructor name to proper case
+ * @param {string} name - Raw instructor name
+ * @returns {string} Formatted instructor name
+ */
+function formatInstructorName(name) {
+  if (!name || typeof name !== 'string') return '';
+  
+  // Split into words and capitalize each word
+  const words = name.trim().split(/\s+/);
+  const formattedWords = words.map(word => {
+    if (word.length === 0) return word;
+    
+    // Handle common titles
+    const title = word.toLowerCase();
+    if (title === 'dr' || title === 'dr.') return 'Dr.';
+    if (title === 'prof' || title === 'prof.') return 'Prof.';
+    if (title === 'mr' || title === 'mr.') return 'Mr.';
+    if (title === 'ms' || title === 'ms.') return 'Ms.';
+    if (title === 'mrs' || title === 'mrs.') return 'Mrs.';
+    
+    // Capitalize first letter, lowercase the rest
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  });
+  
+  return formattedWords.join(' ');
+}
+
+/**
+ * Auto-split text content on title keywords to extract instructor names
+ * @param {string} textContent - Raw text content that may contain multiple instructors
+ * @returns {Array} Array of individual instructor name strings
+ */
+function autoSplitInstructorNames(textContent) {
+  if (!textContent || typeof textContent !== 'string') return [];
+  
+  // Define title keywords to split on (case-insensitive)
+  const titleKeywords = ['dr', 'prof', 'mr', 'ms', 'mrs'];
+  
+  // Split content into lines first
+  const lines = textContent.split('\n').filter(line => line.trim());
+  const extractedNames = [];
+  
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    
+    // Skip empty lines and comments
+    if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith('//')) {
+      continue;
+    }
+    
+    // Check if line already contains a single instructor name
+    if (trimmedLine.match(/^(Dr\.|Prof\.|Mr\.|Ms\.|Mrs\.)\s+[A-Za-z]+\s+[A-Za-z]+/)) {
+      // Single instructor name - add as is
+      extractedNames.push(trimmedLine);
+      continue;
+    }
+    
+    // Try to auto-split on title keywords
+    let currentName = '';
+    const words = trimmedLine.split(/\s+/);
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const nextWord = words[i + 1];
+      const nextNextWord = words[i + 2];
+      
+      // Check if current word is a title keyword
+      const isTitle = titleKeywords.some(keyword => 
+        word.toLowerCase() === keyword || word.toLowerCase() === keyword + '.'
+      );
+      
+      if (isTitle && nextWord && nextNextWord) {
+        // We found a title with at least 2 following words
+        if (currentName.trim()) {
+          // Save the previous name if it exists
+          extractedNames.push(currentName.trim());
+        }
+        
+        // Start building the new name with proper formatting
+        let title = word;
+        if (!title.endsWith('.')) {
+          title = title + '.';
+        }
+        currentName = `${title} ${nextWord} ${nextNextWord}`;
+        
+        // Look for additional words that might be part of this name
+        let j = i + 3;
+        while (j < words.length && !titleKeywords.some(keyword => 
+          words[j].toLowerCase() === keyword || words[j].toLowerCase() === keyword + '.'
+        )) {
+          currentName += ` ${words[j]}`;
+          j++;
+        }
+        
+        // Skip the words we've already processed
+        i = j - 1;
+      } else if (currentName) {
+        // Continue building current name
+        currentName += ` ${word}`;
+      } else if (word && nextWord && !isTitle) {
+        // No title found, but we have at least 2 words - treat as a name
+        currentName = `${word} ${nextWord}`;
+        
+        // Look for additional words
+        let j = i + 2;
+        while (j < words.length && !titleKeywords.some(keyword => 
+          words[j].toLowerCase() === keyword || words[j].toLowerCase() === keyword + '.'
+        )) {
+          currentName += ` ${words[j]}`;
+          j++;
+        }
+        
+        // Skip the words we've already processed
+        i = j - 1;
+      }
+    }
+    
+    // Add the last name if it exists
+    if (currentName.trim()) {
+      extractedNames.push(currentName.trim());
+    }
+  }
+  
+  return extractedNames;
+}
+
+/**
  * Parse text file content to extract instructors and their supervised projects
  * 
- * Expected format:
- * - Each line contains: Instructor Name: Project1, Project2, Project3
- * - OR: Instructor Name - Project1, Project2, Project3
- * - OR: Instructor Name | Project1 | Project2 | Project3
- * - OR: Just instructor names (one per line) - for use with Excel data
+ * Features:
+ * - Auto-splits text on title keywords (Dr, Prof, Mr, Ms, Mrs)
+ * - Handles various input formats automatically
+ * - Smart name formatting and validation
+ * 
+ * Expected formats:
+ * 1. One instructor per line:
+ *    Dr. Muhammad Asim
+ *    Mr. Saad Salman
+ *    Dr. Hasan Mujtaba
+ * 
+ * 2. Multiple instructors in any format (auto-split enabled):
+ *    Dr Muhammad Asim Mr Saad Salman Prof Ahmed Ali
+ *    Dr. Hasan Mujtaba Ms Sarah Khan
  * 
  * @param {string} textContent - Raw text content from file
- * @param {Object} excelData - Optional Excel data containing supervisor-project mappings
+ * @param {Array} excelData - Excel data containing supervisor-project mappings (required)
  * @returns {Object} Parsed data with instructors and projects
  */
 export function parseInstructorProjectFile(textContent, excelData = null) {
@@ -66,63 +300,105 @@ export function parseInstructorProjectFile(textContent, excelData = null) {
     throw new Error('Invalid text content provided');
   }
 
+  if (!excelData || !Array.isArray(excelData)) {
+    throw new Error('Excel data is required. Please upload an Excel file first before uploading the instructor list.');
+  }
+
   const instructors = new Map();
   const projects = new Map();
   const projectGroups = new Map();
-  const lines = textContent.split('\n').filter(line => line.trim());
+  
+  // Auto-split text content on title keywords to extract individual instructor names
+  const extractedNames = autoSplitInstructorNames(textContent);
+  
+  if (extractedNames.length === 0) {
+    throw new Error('No instructor names found in the text content. Please check the format.');
+  }
+  
+  console.log(`🔍 Auto-split found ${extractedNames.length} instructor names:`, extractedNames);
 
   let lineNumber = 0;
   const errors = [];
 
-  for (const line of lines) {
+  for (const extractedName of extractedNames) {
     lineNumber++;
-    const trimmedLine = line.trim();
+    const trimmedName = extractedName.trim();
     
-    if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith('//')) {
-      continue; // Skip empty lines and comments
+    if (!trimmedName) {
+      continue; // Skip empty names
     }
 
     try {
-      // Try different delimiters
-      let instructorName = '';
+      // Process the extracted instructor name
+      let instructorName = trimmedName;
       let projectsText = '';
       
-      if (trimmedLine.includes(':')) {
-        [instructorName, projectsText] = trimmedLine.split(':', 2);
-      } else if (trimmedLine.includes(' - ')) {
-        [instructorName, projectsText] = trimmedLine.split(' - ', 2);
-      } else if (trimmedLine.includes('|')) {
-        const parts = trimmedLine.split('|');
-        instructorName = parts[0];
-        projectsText = parts.slice(1).join('|');
+      // Check if it looks like an instructor name and format it if needed
+      let formattedInstructorName = trimmedName;
+      
+      // Check for various instructor name patterns
+      if (trimmedName.match(/^(Dr\.|Prof\.|Mr\.|Ms\.|Mrs\.)\s+.+/)) {
+        // Already has title - use as is
+        formattedInstructorName = trimmedName;
+      } else if (trimmedName.match(/^[A-Z][a-z]+\s+[A-Z]/)) {
+        // Has proper capitalization (FirstName LastName) - use as is
+        formattedInstructorName = trimmedName;
+      } else if (trimmedName.match(/^[a-z]+\s+[a-z]+/i)) {
+        // Lowercase or mixed case names - try to format them
+        formattedInstructorName = formatInstructorName(trimmedName);
+        console.log(`ℹ️ Formatted instructor name: "${trimmedName}" → "${formattedInstructorName}"`);
+      } else if (trimmedName.match(/^[A-Z]+\s+[A-Z]+/)) {
+        // ALL CAPS names - format them
+        formattedInstructorName = formatInstructorName(trimmedName);
+        console.log(`ℹ️ Formatted instructor name: "${trimmedName}" → "${formattedInstructorName}"`);
       } else {
-        // Check if it's just an instructor name without projects
-        if (trimmedLine.match(/^(Dr\.|Prof\.|Mr\.|Ms\.|Mrs\.)\s+.+/) || trimmedLine.match(/^[A-Z][a-z]+\s+[A-Z]/)) {
-          // If we have Excel data, extract projects for this instructor
-          if (excelData && Array.isArray(excelData)) {
-            const instructorProjects = extractProjectsForInstructor(trimmedLine, excelData);
-            if (instructorProjects.length > 0) {
-              instructorName = trimmedLine;
-              projectsText = instructorProjects.join(', ');
-            } else {
-              errors.push(`Line ${lineNumber}: Instructor "${trimmedLine}" not found in Excel data or has no projects`);
-              continue;
-            }
-          } else {
-            errors.push(`Line ${lineNumber}: Found instructor name "${trimmedLine}" but no projects specified. Expected format: "${trimmedLine}: Project1, Project2" or provide Excel data with project mappings.`);
-            continue;
-          }
+        // Try to extract what looks like a name
+        const nameParts = trimmedName.split(/\s+/).filter(part => part.length > 0);
+        if (nameParts.length >= 2) {
+          formattedInstructorName = formatInstructorName(trimmedName);
+          console.log(`ℹ️ Attempted to format instructor name: "${trimmedName}" → "${formattedInstructorName}"`);
         } else {
-          errors.push(`Line ${lineNumber}: Unable to parse format - "${trimmedLine}". Expected format: "Instructor Name: Project1, Project2"`);
+          errors.push(`Line ${lineNumber}: Invalid instructor name format - "${trimmedName}". Expected: "FirstName LastName" or "Dr./Prof./Mr./Ms. FirstName LastName"`);
           continue;
         }
       }
+      
+      // Extract projects for this instructor from Excel data
+      const instructorProjects = extractProjectsForInstructor(formattedInstructorName, excelData);
+      
+      if (instructorProjects.length > 0) {
+        // Instructor is a supervisor with projects
+        projectsText = instructorProjects.join(', ');
+        console.log(`✅ Supervisor "${formattedInstructorName}" found with ${instructorProjects.length} projects`);
+      } else {
+        // Instructor has no projects - treat as panel member
+        projectsText = '';
+        console.log(`ℹ️ Panel member "${formattedInstructorName}" added (no projects found in Excel)`);
+      }
+      
+      // Update instructor name to use formatted version
+      instructorName = formattedInstructorName;
 
       instructorName = instructorName.trim();
       projectsText = projectsText.trim();
 
-      if (!instructorName || !projectsText) {
-        errors.push(`Line ${lineNumber}: Missing instructor name or projects - ${trimmedLine}`);
+      // Handle case where instructor has no projects (panel member)
+      if (!instructorName) {
+        errors.push(`Line ${lineNumber}: Missing instructor name - ${trimmedName}`);
+        continue;
+      }
+
+      // If no projects text, this is a panel member without projects
+      if (!projectsText) {
+        // Store instructor as panel member (no projects)
+        if (!instructors.has(instructorName)) {
+          instructors.set(instructorName, {
+            name: instructorName,
+            projects: new Set(),
+            groups: new Set()
+          });
+        }
+        console.log(`ℹ️ Panel member "${instructorName}" added (no projects)`);
         continue;
       }
 
@@ -239,8 +515,8 @@ export function parseInstructorProjectFile(textContent, excelData = null) {
         totalInstructors: instructorList.length,
         totalProjects: projectList.length,
         totalGroups: groupList.length,
-        averageProjectsPerInstructor: instructorList.reduce((sum, i) => sum + i.projects.length, 0) / instructorList.length,
-        averageGroupsPerInstructor: instructorList.reduce((sum, i) => sum + i.groups.length, 0) / instructorList.length
+        averageProjectsPerInstructor: instructorList.length > 0 ? instructorList.reduce((sum, i) => sum + i.projects.length, 0) / instructorList.length : 0,
+        averageGroupsPerInstructor: instructorList.length > 0 ? instructorList.reduce((sum, i) => sum + i.groups.length, 0) / instructorList.length : 0
       }
     }
   };
@@ -289,26 +565,36 @@ export function readTextFile(file, excelData = null) {
  * @returns {string} Sample text content
  */
 export function createSampleTextContent() {
-  return `# Sample Instructor and Project Supervision File
-# Format: Instructor Name: Project1, Project2, Project3
+  return `# Sample Instructor List for Panel Allocation
+# Format: One instructor name per line
+# 
+# Instructions:
+# 1. Upload your FYP Excel file first (with Supervisor and Co-Supervisor columns)
+# 2. List instructor names below (one per line)
+# 3. The system will automatically extract their projects from the Excel data
+# 4. Use exact names as they appear in the Excel file
 
-Dr. John Smith: AI Chatbot Development, Machine Learning for Healthcare, Natural Language Processing System
-Prof. Jane Doe: Web Application Security, E-commerce Platform Development
-Dr. Mike Johnson: IoT Smart Home System, Sensor Network Implementation, Home Automation Framework
-Prof. Alice Wilson: Data Analytics Dashboard, Business Intelligence System
-Dr. Bob Brown: Blockchain Voting System, Cryptocurrency Trading Platform
-Prof. Carol White: Mobile Health App, Telemedicine Platform, Patient Monitoring System
-Dr. Sarah Green: Virtual Reality Education Game, AR Learning Environment
-Prof. David Lee: Cybersecurity Risk Assessment, Network Penetration Testing
-Dr. Lisa Taylor: Social Media Analytics, Content Recommendation Engine
-Prof. Mark Davis: Cloud Computing Infrastructure, Microservices Architecture
+Dr. John Smith
+Prof. Jane Doe
+Dr. Mike Johnson
+Prof. Alice Wilson
+Dr. Bob Brown
+Prof. Carol White
+Dr. Sarah Green
+Prof. David Lee
+Dr. Lisa Taylor
+Prof. Mark Davis
+Dr. Paul Chen
+Prof. Emma Clark
+Dr. James Wilson
+Prof. Linda Martinez
+Dr. Kevin Zhang
 
-# Single project supervision
-Dr. Paul Chen: Database Optimization Tool
-Prof. Emma Clark: Image Processing Algorithm
-Dr. James Wilson: Music Streaming Application
-Prof. Linda Martinez: Financial Forecasting Model
-Dr. Kevin Zhang: Supply Chain Management System`;
+# Notes:
+# - Names should match exactly with the Excel data
+# - Include titles (Dr., Prof., Mr., Ms., etc.) as they appear in Excel
+# - Empty lines and lines starting with # are ignored
+# - Instructors not found in Excel will be added as panel members`;
 }
 
 /**
@@ -320,80 +606,46 @@ export function downloadSampleTextFile() {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'sample_instructor_projects.txt';
+  a.download = 'sample_instructor_list.txt';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
 }
 
-/**
- * Convert a simple instructor list to the proper format with placeholder projects
- * @param {string} instructorListText - Text with one instructor name per line
- * @returns {string} Formatted text with instructor: project format
- */
-export function convertInstructorListToFormat(instructorListText) {
-  if (!instructorListText || typeof instructorListText !== 'string') {
-    return '';
-  }
 
-  const lines = instructorListText.split('\n').filter(line => line.trim());
-  const formattedLines = [];
-
-  lines.forEach((line, index) => {
-    const trimmedLine = line.trim();
-    
-    if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith('//')) {
-      formattedLines.push(trimmedLine); // Keep comments and empty lines
-      return;
-    }
-
-    // Check if it looks like an instructor name
-    if (trimmedLine.match(/^(Dr\.|Prof\.|Mr\.|Ms\.|Mrs\.)\s+.+/)) {
-      // Add placeholder projects
-      const projectNumber = index + 1;
-      const formattedLine = `${trimmedLine}: Project ${projectNumber}A, Project ${projectNumber}B`;
-      formattedLines.push(formattedLine);
-    } else {
-      // If it doesn't look like an instructor name, assume it's already formatted
-      formattedLines.push(trimmedLine);
-    }
-  });
-
-  return formattedLines.join('\n');
-}
 
 /**
- * Download a template for converting instructor lists
+ * Download a template for instructor lists
  */
 export function downloadInstructorListTemplate() {
-  const content = `# Instructor List to Project Assignment Template
+  const content = `# Instructor List Template for Panel Allocation
 # 
-# If you have a list of instructors without projects, you can use this template:
-# 1. Replace the sample names below with your actual instructor names
-# 2. Replace the placeholder projects with actual project names
-# 3. Each instructor should have at least one project assigned
+# Instructions:
+# 1. Upload your FYP Excel file first (containing supervisor and project data)
+# 2. List instructor names below (one per line)
+# 3. The system will automatically extract their projects from the Excel data
+# 4. Use exact names as they appear in the Excel file
+#
+# Format: One instructor name per line
 
-Dr. John Smith: AI Chatbot Development, Machine Learning System
-Prof. Jane Doe: Web Security Platform
-Dr. Mike Johnson: IoT Smart Home, Sensor Network
-Prof. Alice Wilson: Data Analytics Dashboard
-Dr. Bob Brown: Blockchain Voting System
+Dr. John Smith
+Prof. Jane Doe
+Dr. Mike Johnson
+Prof. Alice Wilson
+Dr. Bob Brown
+Prof. Carol White
+Dr. Sarah Green
+Prof. David Lee
+Dr. Lisa Taylor
+Prof. Mark Davis
 
-# Format rules:
-# - Use colon (:) to separate instructor name from projects
-# - Use comma (,) to separate multiple projects
-# - Alternative formats also supported:
-#   Dr. John Smith - Project1, Project2
-#   Dr. John Smith | Project1 | Project2
-
-# ALTERNATIVELY: For instructor-only lists (when you have Excel data uploaded):
-# Simply list instructor names one per line:
-# Dr. John Smith
-# Prof. Jane Doe
-# Dr. Mike Johnson
-# Prof. Alice Wilson
-# Dr. Bob Brown`;
+# Notes:
+# - Names should match exactly with the Excel data
+# - Include titles (Dr., Prof., Mr., Ms., etc.) as they appear in Excel
+# - Empty lines and lines starting with # are ignored
+# - Instructors not found in Excel will be added as panel members
+# - Excel file must be uploaded BEFORE uploading this instructor list`;
 
   const blob = new Blob([content], { type: 'text/plain' });
   const url = window.URL.createObjectURL(blob);
@@ -419,10 +671,18 @@ export function extractSupervisorStatistics(excelData) {
   const supervisorMap = new Map();
 
   excelData.forEach((row, index) => {
-    const supervisor = row.Supervisor || '';
-    const coSupervisor = row['Co-Supervisor'] || '';
-    const projectTitle = row['Project Title'] || row.projectTitle || row.Short_Title || `Project_${index + 1}`;
-    const projectScope = row['Project Scope'] || row.projectScope || '';
+    const supervisor = getSupervisorColumn(row, 'supervisor') || '';
+    const coSupervisor = getSupervisorColumn(row, 'co-supervisor') || '';
+    const projectTitle = getProjectTitleColumn(row) || `Project_${index + 1}`;
+    const projectScope = getProjectScopeColumn(row) || '';
+
+    // Debug logging for first row
+    if (index === 0) {
+      console.log('Excel columns detected:', Object.keys(row));
+      console.log('Supervisor found:', supervisor);
+      console.log('Co-Supervisor found:', coSupervisor);
+      console.log('Project Title found:', projectTitle);
+    }
 
     // Process main supervisor
     if (supervisor.trim()) {

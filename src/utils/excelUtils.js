@@ -18,14 +18,19 @@ export function readExcelFile(file) {
         // Convert to JSON
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
         
-        // Standardize column names
+        // Standardize column names while preserving ALL original data
         const standardizedData = jsonData.map((row, index) => {
           const standardRow = {
             projectId: row['Short_Title'] || row['Project Short Title'] || `Project_${index + 1}`,
             projectTitle: row['Project Title'] || '',
             projectScope: row['Project Scope'] || '',
             primaryDomain: row['Categorize the primary domain of project'] || '',
-            subCategory: row['Sub-category of the project'] || ''
+            subCategory: row['Sub-category of the project'] || '',
+            // Preserve supervisor information - CRITICAL for panel allocation
+            supervisor: row['Supervisor'] || '',
+            coSupervisor: row['Co-Supervisor'] || row['Co-supervisor'] || '',
+            // Preserve ALL original columns for compatibility
+            ...row
           };
           
           // Clean empty values

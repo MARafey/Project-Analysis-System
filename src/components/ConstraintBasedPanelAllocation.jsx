@@ -1,12 +1,18 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { readTextFile, downloadSampleTextFile, downloadInstructorListTemplate, downloadInstructorOnlyTemplate, extractSupervisorStatistics } from '../utils/textFileParser';
 import { allocateGroupsToPanels } from '../utils/constraintBasedPanelAllocation';
 import { exportConstraintBasedPanelAllocation, exportSupervisorStatistics } from '../utils/excelUtils';
 import { readExcelFile } from '../utils/excelUtils';
+import { isGeminiAvailable, generatePanelAllocationSuggestions } from '../utils/geminiApi';
 
-const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalysis = false }) => {
+const ConstraintBasedPanelAllocation = ({ 
+  similarityResults = null, 
+  hasFYPAnalysis = false,
+  excelData: passedExcelData = null,
+  domainResults = null
+}) => {
   const [parsedData, setParsedData] = useState(null);
-  const [excelData, setExcelData] = useState(null);
+  const [excelData, setExcelData] = useState(passedExcelData);
   const [supervisorStats, setSupervisorStats] = useState(null);
   const [constraints, setConstraints] = useState({
     numberOfPanels: 3,
@@ -18,6 +24,19 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [showFormatHelper, setShowFormatHelper] = useState(false);
+  const [geminiSuggestions, setGeminiSuggestions] = useState(null);
+  const [useGeminiEnhancement, setUseGeminiEnhancement] = useState(false);
+  const [processingStep, setProcessingStep] = useState('');
+  const [processingProgress, setProcessingProgress] = useState(0);
+
+  // Process passed Excel data automatically
+  useEffect(() => {
+    if (passedExcelData && passedExcelData.length > 0) {
+      setExcelData(passedExcelData);
+      const stats = extractSupervisorStatistics(passedExcelData);
+      setSupervisorStats(stats);
+    }
+  }, [passedExcelData]);
 
   // Handle Excel file upload
   const handleExcelUpload = useCallback(async (file) => {
@@ -59,17 +78,16 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
       const result = await readTextFile(file, excelData);
       
       if (!result.success) {
-        // Check if this is a format error (instructor names without projects)
-        const formatErrors = result.errors.filter(err => err.includes('but no projects specified') || err.includes('not found in Excel data'));
-        if (formatErrors.length > 0) {
-          if (excelData) {
-            setError(`Some instructors in your list were not found in the Excel data or have no projects. Please check the names match exactly with the Excel file.`);
-          } else {
-            setError(`Format Error: Your file contains instructor names without projects. Please upload an Excel file first, or use the format "Instructor Name: Project1, Project2".`);
-          }
+        // Check for format errors
+        if (result.errors.some(err => err.includes('Excel data is required'))) {
+          setError(`Excel file required: Please upload your FYP Excel file first before uploading the instructor list.`);
+          setShowFormatHelper(false);
+        } else if (result.errors.some(err => err.includes('Invalid instructor name format'))) {
+          setError(`Invalid instructor names detected. The system will try to format them automatically. Please check that each line contains a valid name (e.g., "FirstName LastName" or "Dr. FirstName LastName")`);
           setShowFormatHelper(true);
         } else {
           setError(`File parsing failed: ${result.errors.slice(0, 3).join(', ')}${result.errors.length > 3 ? ` and ${result.errors.length - 3} more errors` : ''}`);
+          setShowFormatHelper(true);
         }
         return;
       }
@@ -100,7 +118,7 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
   }, []);
 
   // Run panel allocation
-  const runPanelAllocation = useCallback(() => {
+  const runPanelAllocation = useCallback(async () => {
     if (!parsedData) {
       setError('Please upload a file first');
       return;
@@ -108,10 +126,55 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
 
     setIsProcessing(true);
     setError(null);
+    setGeminiSuggestions(null);
+    setProcessingStep('Initializing panel allocation...');
+    setProcessingProgress(0);
 
     try {
+      // Step 1: Get Gemini suggestions if available and enabled
+      if (useGeminiEnhancement && isGeminiAvailable() && excelData) {
+        try {
+          setProcessingStep('Getting AI-powered suggestions...');
+          setProcessingProgress(20);
+          
+          const suggestions = await generatePanelAllocationSuggestions(
+            excelData.slice(0, 20), // Limit to first 20 projects for API efficiency
+            constraints,
+            similarityResults || []
+          );
+          
+          if (suggestions.success) {
+            setGeminiSuggestions(suggestions.data);
+          }
+          setProcessingProgress(40);
+        } catch (geminiError) {
+          console.warn('Gemini suggestions failed:', geminiError);
+          // Continue with regular allocation
+        }
+      } else {
+        setProcessingProgress(40);
+      }
+
+      // Step 2: Run the main allocation algorithm
+      setProcessingStep('Allocating projects and instructors to panels...');
+      setProcessingProgress(60);
+      
       const result = allocateGroupsToPanels(parsedData, constraints, similarityResults);
       setAllocationResult(result);
+      
+      setProcessingStep('Finalizing panel assignments...');
+      setProcessingProgress(90);
+      
+      // Small delay to show completion
+      setTimeout(() => {
+        setProcessingProgress(100);
+        setProcessingStep('Panel allocation completed successfully!');
+        setTimeout(() => {
+          setIsProcessing(false);
+          setProcessingStep('');
+          setProcessingProgress(0);
+        }, 1000);
+      }, 500);
       
       if (!result.success) {
         setError('Panel allocation completed with some issues. Check the results below.');
@@ -120,10 +183,11 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
     } catch (err) {
       setError(`Allocation failed: ${err.message}`);
       setAllocationResult(null);
-    } finally {
       setIsProcessing(false);
+      setProcessingStep('');
+      setProcessingProgress(0);
     }
-  }, [parsedData, constraints]);
+  }, [parsedData, constraints, similarityResults, useGeminiEnhancement, excelData]);
 
   // Download results
   const downloadResults = useCallback(() => {
@@ -161,11 +225,42 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
     }
   }, [supervisorStats]);
 
+  // Create instructor list from Excel data
+  const createInstructorListFromExcel = useCallback(() => {
+    if (!supervisorStats || !supervisorStats.supervisors) {
+      alert('No supervisor data available');
+      return;
+    }
+
+    const instructorList = supervisorStats.supervisors
+      .map(supervisor => supervisor.name)
+      .join('\n');
+
+    const content = `# Instructor List Generated from Excel Data
+# Total Supervisors: ${supervisorStats.totalSupervisors}
+# Total Projects: ${supervisorStats.totalProjects}
+# Generated on: ${new Date().toLocaleDateString()}
+
+${instructorList}`;
+
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'instructor_list_from_excel.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    alert(`Created instructor list with ${supervisorStats.totalSupervisors} supervisors!`);
+  }, [supervisorStats]);
+
   return (
     <div className="constraint-based-panel-allocation">
-      <div className="card">
-        <div className="panel-allocation-header">
-          <h2>📋 Constraint-Based Panel Allocation</h2>
+      <div className="enhanced-card">
+        <div className="enhanced-card-header">
+          <h2 className="enhanced-card-title">📋 Constraint-Based Panel Allocation</h2>
           <p className="section-description">
             Upload a text file with instructor-project mappings and configure hard/soft constraints
             to generate optimal panel allocations.
@@ -189,39 +284,152 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
           </div>
         </div>
 
-        {/* File Upload Section */}
-        <div className="file-upload-section">
-          <h3>📁 Upload Files</h3>
-          
-          {/* Step 1: Excel File Upload */}
-          <div className="upload-step">
-            <h4>Step 1: Upload FYP Excel File (Optional but Recommended)</h4>
-            <div className="upload-controls">
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={(e) => e.target.files[0] && handleExcelUpload(e.target.files[0])}
-                className="file-input"
-                disabled={isProcessing}
-              />
-              {supervisorStats && (
-                <button
-                  onClick={downloadSupervisorStats}
-                  className="btn btn-primary btn-sm"
-                  type="button"
-                >
-                  📊 Download Supervisor Statistics
-                </button>
-              )}
+        {/* Loading State */}
+        {isProcessing && (
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <div className="loading-text">{processingStep}</div>
+            <div className="loading-subtext">
+              {processingProgress < 100 ? 'Processing...' : 'Finalizing...'}
             </div>
             
-            {excelData && (
-              <div className="excel-preview">
-                <div className="excel-stats">
-                  <span className="stat-badge">✅ Excel Loaded</span>
-                  <span className="stat-badge">{supervisorStats?.totalProjects} Projects</span>
-                  <span className="stat-badge">{supervisorStats?.totalSupervisors} Supervisors</span>
+            <div className="progress-container">
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill" 
+                  style={{ width: `${processingProgress}%` }}
+                ></div>
+              </div>
+              <div className="progress-text">
+                <span>Progress</span>
+                <span className="progress-percentage">{processingProgress}%</span>
+              </div>
+            </div>
+
+            <div className="progress-steps">
+              <div className={`progress-step ${processingProgress >= 0 ? 'completed' : ''}`}>
+                <div className="progress-step-icon">1</div>
+                <div className="progress-step-text">Initialize</div>
+              </div>
+              <div className={`progress-step ${processingProgress >= 20 ? 'completed' : processingProgress >= 10 ? 'active' : ''}`}>
+                <div className="progress-step-icon">2</div>
+                <div className="progress-step-text">AI Suggestions</div>
+              </div>
+              <div className={`progress-step ${processingProgress >= 60 ? 'completed' : processingProgress >= 40 ? 'active' : ''}`}>
+                <div className="progress-step-icon">3</div>
+                <div className="progress-step-text">Panel Allocation</div>
+              </div>
+              <div className={`progress-step ${processingProgress >= 90 ? 'completed' : processingProgress >= 80 ? 'active' : ''}`}>
+                <div className="progress-step-icon">4</div>
+                <div className="progress-step-text">Finalize</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="enhanced-card-body">
+          {/* File Upload Section */}
+          <div className="file-upload-section">
+          <h3>📁 Upload Files</h3>
+          
+          {/* Step 1: Excel File Status */}
+          <div className="upload-step">
+            <h4>Step 1: FYP Excel Data</h4>
+            {excelData && excelData.length > 0 ? (
+              <div className="excel-already-loaded">
+                <div className="excel-preview">
+                  <div className="excel-stats">
+                    <span className="stat-badge">✅ Excel Data Available from FYP Analysis</span>
+                    <span className="stat-badge">{supervisorStats?.totalProjects} Projects</span>
+                    <span className="stat-badge">{supervisorStats?.totalSupervisors} Supervisors</span>
+                  </div>
                 </div>
+                <div className="excel-actions">
+                  {supervisorStats && (
+                    <button
+                      onClick={downloadSupervisorStats}
+                      className="btn btn-primary btn-sm"
+                      type="button"
+                    >
+                      📊 Download Supervisor Statistics
+                    </button>
+                  )}
+                </div>
+                <p className="help-text">
+                  ✅ Using Excel data from your FYP analysis. Projects will be automatically extracted for instructors.
+                </p>
+                
+                {supervisorStats && supervisorStats.supervisors.length > 0 && (
+                  <div className="available-supervisors">
+                    <h5>Available Supervisors in Excel Data:</h5>
+                    <div className="supervisor-list">
+                      {supervisorStats.supervisors.slice(0, 10).map((supervisor, index) => (
+                        <span key={index} className="supervisor-chip">
+                          {supervisor.name} ({supervisor.projectCount})
+                        </span>
+                      ))}
+                      {supervisorStats.supervisors.length > 10 && (
+                        <span className="more-supervisors">+{supervisorStats.supervisors.length - 10} more</span>
+                      )}
+                    </div>
+                    <p className="supervisor-help">
+                      Copy these names to create your instructor list. Numbers show project count.
+                      <br />
+                      <strong>Note:</strong> You can also include instructors who don't supervise projects - they'll be assigned as panel members.
+                    </p>
+                    <button
+                      onClick={() => createInstructorListFromExcel()}
+                      className="btn btn-secondary btn-sm"
+                      type="button"
+                    >
+                      📋 Create Text File with All Supervisors
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="excel-upload-section">
+                <div className="upload-controls">
+                  <div className="file-upload-container">
+                    <label className="file-upload-label">
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={(e) => e.target.files[0] && handleExcelUpload(e.target.files[0])}
+                        className="file-input-hidden"
+                        disabled={isProcessing}
+                      />
+                      <div className="file-upload-button">
+                        <span className="upload-icon">📊</span>
+                        <span>Choose Excel File</span>
+                      </div>
+                    </label>
+                    
+                    {supervisorStats && (
+                      <button
+                        onClick={downloadSupervisorStats}
+                        className="btn btn-primary btn-sm"
+                        type="button"
+                      >
+                        📊 Download Supervisor Statistics
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                {excelData && (
+                  <div className="excel-preview">
+                    <div className="excel-stats">
+                      <span className="stat-badge">✅ Excel Loaded</span>
+                      <span className="stat-badge">{supervisorStats?.totalProjects} Projects</span>
+                      <span className="stat-badge">{supervisorStats?.totalSupervisors} Supervisors</span>
+                    </div>
+                  </div>
+                )}
+                
+                <p className="help-text">
+                  Upload your FYP Excel file to enable automatic project extraction for instructors.
+                </p>
               </div>
             )}
           </div>
@@ -230,60 +438,65 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
           <div className="upload-step">
             <h4>Step 2: Upload Instructor List</h4>
             <div className="upload-controls">
-              <input
-                type="file"
-                accept=".txt"
-                onChange={(e) => e.target.files[0] && handleTextFileUpload(e.target.files[0])}
-                className="file-input"
-                disabled={isProcessing}
-              />
-              <button
-                onClick={handleDownloadSample}
-                className="btn btn-secondary btn-sm"
-                type="button"
-              >
-                📥 Download Sample
-              </button>
-              
-              <button
-                onClick={() => downloadInstructorListTemplate()}
-                className="btn btn-secondary btn-sm"
-                type="button"
-              >
-                📋 Full Template
-              </button>
-
-              <button
-                onClick={() => downloadInstructorOnlyTemplate()}
-                className="btn btn-secondary btn-sm"
-                type="button"
-              >
-                📝 Instructor-Only Template
-              </button>
+              <div className="file-upload-container">
+                <label className="file-upload-label">
+                  <input
+                    type="file"
+                    accept=".txt"
+                    onChange={(e) => e.target.files[0] && handleTextFileUpload(e.target.files[0])}
+                    className="file-input-hidden"
+                    disabled={isProcessing}
+                  />
+                  <div className="file-upload-button">
+                    <span className="upload-icon">📝</span>
+                    <span>Choose Text File</span>
+                  </div>
+                </label>
+                
+                <button
+                  onClick={handleDownloadSample}
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                >
+                  📥 Download Sample
+                </button>
+                
+                <button
+                  onClick={() => downloadInstructorListTemplate()}
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                >
+                  📋 Download Template
+                </button>
+              </div>
             </div>
           </div>
           
           <div className="file-format-help">
-            <h4>File Format Options:</h4>
+            <h4>Expected File Format:</h4>
             
             <div className="format-option">
-              <h5>Option 1: With Excel Data (Recommended)</h5>
+              <h5>Instructor Names Only {excelData && excelData.length > 0 ? '(✅ Excel Data Available)' : '(Upload Excel File First)'}</h5>
               <pre className="format-example">
 {`Dr. Muhammad Asim
 Mr. Saad Salman
-Dr. Hasan Mujtaba`}
+Dr. Hasan Mujtaba
+Prof. Ahmed Ali
+Dr. Sarah Khan`}
               </pre>
-              <p>Just list instructor names (one per line). Projects will be extracted from Excel data.</p>
-            </div>
-
-            <div className="format-option">
-              <h5>Option 2: Traditional Format</h5>
-              <pre className="format-example">
-{`Dr. John Smith: AI Chatbot Development, Machine Learning System
-Prof. Jane Doe: Web Security Platform, E-commerce Development
-Dr. Mike Johnson: IoT Smart Home, Sensor Network, Automation`}
-              </pre>
-              <p>Each line should contain: <code>Instructor Name: Project1, Project2, Project3</code></p>
+                             <p>List instructor names (one per line). Projects will be automatically extracted from your Excel data.</p>
+               <div className="format-requirements">
+                 <strong>Requirements:</strong>
+                 <ul>
+                   <li>✅ Excel file must be uploaded first</li>
+                   <li>✅ Use exact names as they appear in Excel</li>
+                   <li>✅ Include titles (Dr., Prof., Mr., Ms., etc.)</li>
+                   <li>✅ One instructor name per line</li>
+                   <li>✅ Empty lines and comments (#) are ignored</li>
+                 </ul>
+                 <p><strong>🔄 Auto-Split Feature:</strong> The system automatically detects and splits instructor names on title keywords like "Dr", "Prof", "Mr", "Ms", "Mrs".</p>
+                 <p><strong>Example:</strong> <code>Dr Muhammad Asim Mr Saad Salman Prof Ahmed Ali</code> will be automatically split into 3 separate instructors.</p>
+               </div>
             </div>
           </div>
         </div>
@@ -367,10 +580,17 @@ Dr. Mike Johnson: IoT Smart Home, Sensor Network, Automation`}
           </div>
         )}
 
+          </div>
+        </div>
+
         {/* Constraints Configuration */}
         {parsedData && (
-          <div className="constraints-config">
-            <h3>⚙️ Configure Constraints</h3>
+          <>
+            <div className="enhanced-card-header">
+              <h3 className="enhanced-card-title">⚙️ Configure Constraints</h3>
+            </div>
+            <div className="enhanced-card-body">
+              <div className="constraints-config">
             
             <div className="constraints-grid">
               <div className="constraint-group">
@@ -436,25 +656,44 @@ Dr. Mike Johnson: IoT Smart Home, Sensor Network, Automation`}
               </div>
             </div>
 
+            {/* AI Enhancement Options */}
+            {isGeminiAvailable() && excelData && (
+              <div className="ai-enhancement-section">
+                <h4>🤖 AI Enhancement</h4>
+                <div className="form-group">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={useGeminiEnhancement}
+                      onChange={(e) => setUseGeminiEnhancement(e.target.checked)}
+                      disabled={isProcessing}
+                    />
+                    <span>Use Gemini AI for enhanced panel allocation suggestions</span>
+                  </label>
+                  <p className="help-text">
+                    Get AI-powered recommendations for optimal panel composition with domain diversity analysis
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="allocation-actions">
               <button
                 onClick={runPanelAllocation}
                 disabled={!parsedData || isProcessing}
-                className="btn btn-primary"
+                className={`btn btn-primary ${isProcessing ? 'processing' : ''}`}
               >
-                {isProcessing ? '🔄 Allocating...' : '🚀 Generate Panel Allocation'}
+                {isProcessing ? '🔄 Allocating...' : 
+                 useGeminiEnhancement && isGeminiAvailable() ? '🚀 Generate AI-Enhanced Panels' : 
+                 '🚀 Generate Panel Allocation'}
               </button>
             </div>
           </div>
+            </div>
+          </>
         )}
 
-        {/* Loading State */}
-        {isProcessing && (
-          <div className="allocation-progress">
-            <div className="progress-spinner"></div>
-            <p>Processing allocation with constraints...</p>
-          </div>
-        )}
+
 
         {/* Error Display */}
         {error && (
@@ -471,53 +710,50 @@ Dr. Mike Johnson: IoT Smart Home, Sensor Network, Automation`}
           <div className="format-helper">
             <div className="format-helper-content">
               <h3>📝 Format Help</h3>
-              <p>{excelData ? 'Some instructors in your list were not found in the Excel data.' : 'Your file contains instructor names but no project assignments.'} Here's how to fix it:</p>
+              <p>Some instructors in your list were not found in the Excel data. Here's how to fix it:</p>
               
               <div className="format-options">
-                {excelData ? (
-                  <>
-                    <div className="format-option">
-                      <h4>Check Instructor Names</h4>
-                      <p>Make sure instructor names in your text file match exactly with the Excel data:</p>
-                      <div className="excel-supervisors-sample">
-                        <h5>Available supervisors in Excel:</h5>
-                        <div className="supervisor-names">
-                          {supervisorStats?.supervisors.slice(0, 8).map(sup => (
-                            <span key={sup.name} className="supervisor-name-tag">{sup.name}</span>
-                          ))}
-                          {supervisorStats?.supervisors.length > 8 && (
-                            <span className="more-tag">+{supervisorStats.supervisors.length - 8} more</span>
-                          )}
-                        </div>
+                <div className="format-option">
+                  <h4>Check Instructor Names</h4>
+                  <p>Make sure instructor names in your text file match exactly with the Excel data:</p>
+                  {supervisorStats && (
+                    <div className="excel-supervisors-sample">
+                      <h5>Available supervisors in Excel:</h5>
+                      <div className="supervisor-names">
+                        {supervisorStats.supervisors.slice(0, 8).map(sup => (
+                          <span key={sup.name} className="supervisor-name-tag">{sup.name}</span>
+                        ))}
+                        {supervisorStats.supervisors.length > 8 && (
+                          <span className="more-tag">+{supervisorStats.supervisors.length - 8} more</span>
+                        )}
                       </div>
                     </div>
-                    
-                    <div className="format-option">
-                      <h4>Instructor-Only Template</h4>
-                      <p>Use the instructor-only template with names from your Excel data:</p>
-                      <pre className="format-example">
-{supervisorStats?.supervisors.slice(0, 3).map(sup => sup.name).join('\n') || 'Dr. Muhammad Asim\nMr. Saad Salman\nDr. Hasan Mujtaba'}
-                      </pre>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="format-option">
-                      <h4>Option 1: Upload Excel File First</h4>
-                      <p>Upload your FYP Excel file first, then use instructor-only list format.</p>
-                    </div>
-                    
-                    <div className="format-option">
-                      <h4>Option 2: Traditional Format</h4>
-                      <p>Add project names to each instructor line using this format:</p>
-                      <pre className="format-example">
-{`Dr. John Smith: Project A, Project B
-Prof. Jane Doe: Web Security Platform
-Ms. Alice Wilson: Data Analytics Dashboard, ML System`}
-                      </pre>
-                    </div>
-                  </>
-                )}
+                  )}
+                </div>
+                
+                <div className="format-option">
+                  <h4>Correct Format</h4>
+                  <p>Use this format with names from your Excel data:</p>
+                  <pre className="format-example">
+{supervisorStats?.supervisors.slice(0, 4).map(sup => sup.name).join('\n') || `Dr. Muhammad Asim
+Mr. Saad Salman
+Dr. Hasan Mujtaba
+Prof. Ahmed Ali`}
+                  </pre>
+                  <p><strong>Requirements:</strong></p>
+                  <ul>
+                    <li>✅ One instructor name per line</li>
+                    <li>✅ Use exact names from Excel data</li>
+                    <li>✅ Include titles (Dr., Prof., Mr., Ms.)</li>
+                    <li>✅ Excel file must be uploaded first</li>
+                  </ul>
+                  <p><strong>Smart Formatting:</strong> The system automatically formats names like:</p>
+                  <ul>
+                    <li><code>dr muhammad asim</code> → <code>Dr. Muhammad Asim</code></li>
+                    <li><code>PROF AHMED ALI</code> → <code>Prof. Ahmed Ali</code></li>
+                    <li><code>muhammad asim</code> → <code>Muhammad Asim</code></li>
+                  </ul>
+                </div>
               </div>
               
               <div className="format-helper-actions">
@@ -528,22 +764,73 @@ Ms. Alice Wilson: Data Analytics Dashboard, ML System`}
                   Close Help
                 </button>
                 
-                {excelData ? (
-                  <button
-                    onClick={() => downloadInstructorOnlyTemplate()}
-                    className="btn btn-primary"
-                  >
-                    📝 Download Instructor-Only Template
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => downloadInstructorListTemplate()}
-                    className="btn btn-primary"
-                  >
-                    📋 Download Full Template
-                  </button>
-                )}
+                <button
+                  onClick={() => downloadInstructorOnlyTemplate()}
+                  className="btn btn-primary"
+                >
+                  📝 Download Template
+                </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Gemini AI Suggestions */}
+        {geminiSuggestions && (
+          <div className="gemini-suggestions">
+            <h3>🤖 AI Recommendations</h3>
+            <div className="suggestions-content">
+              <div className="domain-analysis">
+                <h4>Domain Distribution Analysis</h4>
+                <p>{geminiSuggestions.domainBalanceAnalysis}</p>
+              </div>
+
+              {geminiSuggestions.recommendations && geminiSuggestions.recommendations.length > 0 && (
+                <div className="panel-recommendations">
+                  <h4>Recommended Panel Compositions</h4>
+                  <div className="recommendations-grid">
+                    {geminiSuggestions.recommendations.slice(0, 3).map((rec, index) => (
+                      <div key={index} className="recommendation-card">
+                        <h5>Panel {rec.panelNumber}</h5>
+                        <div className="panel-projects">
+                          <strong>Projects:</strong> {rec.suggestedProjects?.join(', ') || 'Various projects'}
+                        </div>
+                        <div className="domain-distribution">
+                          <strong>Domains:</strong>
+                          {rec.domainDistribution && Object.entries(rec.domainDistribution).map(([domain, count]) => (
+                            <span key={domain} className="domain-tag">{domain}: {count}</span>
+                          ))}
+                        </div>
+                        <div className="reasoning">
+                          <strong>Reasoning:</strong> {rec.reasoning}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {geminiSuggestions.potentialIssues && geminiSuggestions.potentialIssues.length > 0 && (
+                <div className="potential-issues">
+                  <h4>⚠️ Potential Issues to Consider</h4>
+                  <ul>
+                    {geminiSuggestions.potentialIssues.map((issue, index) => (
+                      <li key={index}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {geminiSuggestions.optimizationTips && geminiSuggestions.optimizationTips.length > 0 && (
+                <div className="optimization-tips">
+                  <h4>💡 Optimization Tips</h4>
+                  <ul>
+                    {geminiSuggestions.optimizationTips.map((tip, index) => (
+                      <li key={index}>{tip}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -667,6 +954,68 @@ Ms. Alice Wilson: Data Analytics Dashboard, ML System`}
                           <span>Instructors:</span>
                           <span>{panel.instructors.length}/{constraints.instructorsPerPanel}</span>
                         </div>
+                      </div>
+
+                      {/* Domain Diversity Display */}
+                      <div className="panel-domains">
+                        <h6>Domain Distribution:</h6>
+                        <div className="domain-badges">
+                          {(() => {
+                            const domains = {};
+                            panel.groups.forEach(group => {
+                              group.projects.forEach(project => {
+                                // Simple domain detection
+                                const projectLower = project.toLowerCase();
+                                let domain = 'General';
+                                if (projectLower.includes('ai') || projectLower.includes('ml') || projectLower.includes('chatbot')) domain = 'AI/ML';
+                                else if (projectLower.includes('web') || projectLower.includes('website') || projectLower.includes('platform')) domain = 'Web';
+                                else if (projectLower.includes('mobile') || projectLower.includes('app')) domain = 'Mobile';
+                                else if (projectLower.includes('iot') || projectLower.includes('smart')) domain = 'IoT';
+                                else if (projectLower.includes('security') || projectLower.includes('cyber')) domain = 'Security';
+                                else if (projectLower.includes('game') || projectLower.includes('vr') || projectLower.includes('ar')) domain = 'Gaming/VR';
+                                
+                                domains[domain] = (domains[domain] || 0) + 1;
+                              });
+                            });
+
+                            return Object.entries(domains).map(([domain, count]) => (
+                              <span 
+                                key={domain} 
+                                className={`domain-badge ${count > 4 ? 'domain-high' : count > 2 ? 'domain-medium' : 'domain-low'}`}
+                                title={`${count} projects in ${domain}`}
+                              >
+                                {domain}: {count}
+                              </span>
+                            ));
+                          })()}
+                        </div>
+                        {(() => {
+                          const domains = {};
+                          panel.groups.forEach(group => {
+                            group.projects.forEach(project => {
+                              const projectLower = project.toLowerCase();
+                              let domain = 'General';
+                              if (projectLower.includes('ai') || projectLower.includes('ml') || projectLower.includes('chatbot')) domain = 'AI/ML';
+                              else if (projectLower.includes('web') || projectLower.includes('website') || projectLower.includes('platform')) domain = 'Web';
+                              else if (projectLower.includes('mobile') || projectLower.includes('app')) domain = 'Mobile';
+                              else if (projectLower.includes('iot') || projectLower.includes('smart')) domain = 'IoT';
+                              else if (projectLower.includes('security') || projectLower.includes('cyber')) domain = 'Security';
+                              else if (projectLower.includes('game') || projectLower.includes('vr') || projectLower.includes('ar')) domain = 'Gaming/VR';
+                              
+                              domains[domain] = (domains[domain] || 0) + 1;
+                            });
+                          });
+
+                          const maxCount = Math.max(...Object.values(domains));
+                          if (maxCount > 4) {
+                            return (
+                              <div className="domain-warning">
+                                ⚠️ High concentration in one domain ({maxCount} projects)
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -793,19 +1142,10 @@ Ms. Alice Wilson: Data Analytics Dashboard, ML System`}
               </div>
             </div>
 
-            <div className="workflow-benefits">
-              <h4>✨ Benefits of the New Workflow:</h4>
-              <ul>
-                <li>🎯 <strong>Simplified Input:</strong> Just list instructor names when you have Excel data</li>
-                <li>📊 <strong>Automatic Statistics:</strong> Get supervisor workload distribution automatically</li>
-                <li>🔄 <strong>Data Consistency:</strong> Projects are extracted directly from your Excel source</li>
-                <li>📈 <strong>Enhanced Reports:</strong> Download detailed supervisor statistics Excel files</li>
-              </ul>
-            </div>
           </div>
         )}
       </div>
-    </div>
+
   );
 };
 

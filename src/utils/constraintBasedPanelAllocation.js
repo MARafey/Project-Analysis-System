@@ -3,6 +3,13 @@
  * 
  * This module implements a panel allocation algorithm that strictly follows
  * hard and soft constraints as specified in the requirements.
+ * 
+ * **BALANCED DISTRIBUTION STRATEGY:**
+ * 1. Fill ALL panels to minimum capacity first
+ * 2. Only add additional groups when ALL panels have reached minimum
+ * 3. Maintain balanced distribution - avoid overloading one panel while others are empty
+ * 4. Respect hard constraints (max instructors) at all times
+ * 5. Prefer staying within soft constraints (desired groups per panel)
  */
 
 /**
@@ -70,19 +77,17 @@ export function allocateGroupsToPanels(parsedData, constraints, similarityResult
 
     const unallocatedGroups = groupSet.filter(groupId => !allocatedGroups.has(groupId));
     const setInstructors = new Set();
-    let totalProjectsInSet = 0;
 
-    // Collect all instructors and count projects for this set
+    // Collect all instructors for this set
     unallocatedGroups.forEach(groupId => {
       const group = groups.find(g => g.id === groupId);
       if (group) {
         group.supervisors.forEach(supervisor => setInstructors.add(supervisor));
-        totalProjectsInSet += group.projects.length;
       }
     });
 
     // Find the best panel for this set
-    const bestPanel = findBestPanelForGroupSet(panels, unallocatedGroups, setInstructors, constraints);
+    const bestPanel = findBestPanelForGroupSet(panels, unallocatedGroups, setInstructors, constraints, groups);
     
     if (bestPanel) {
       // Allocate the entire set to this panel
@@ -116,7 +121,7 @@ export function allocateGroupsToPanels(parsedData, constraints, similarityResult
   
   for (const group of remainingGroups) {
     const groupInstructors = new Set(group.supervisors);
-    const bestPanel = findBestPanelForGroupSet(panels, [group.id], groupInstructors, constraints);
+    const bestPanel = findBestPanelForGroupSet(panels, [group.id], groupInstructors, constraints, groups);
     
     if (bestPanel) {
       bestPanel.groups.push(group);
@@ -139,10 +144,13 @@ export function allocateGroupsToPanels(parsedData, constraints, similarityResult
     }
   }
 
-  // Step 5: Optimize instructor assignments
+  // Step 5: Distribute non-supervisor instructors to panels
+  distributeNonSupervisorInstructors(panels, instructors, constraints);
+
+  // Step 6: Optimize instructor assignments
   optimizeInstructorAssignments(panels, groups);
 
-  // Step 6: Generate warnings and constraint analysis
+  // Step 7: Generate warnings and constraint analysis
   analyzeConstraints(panels, constraints, allocationResults);
 
   // Convert instructor sets to arrays
@@ -263,34 +271,57 @@ function findOverlappingGroups(groups, similarityResults = null) {
 /**
  * Find the best panel for a group set
  */
-function findBestPanelForGroupSet(panels, groupIds, instructors, constraints) {
+function findBestPanelForGroupSet(panels, groupIds, instructors, constraints, allGroups = []) {
   let bestPanel = null;
   let bestScore = -1;
 
-  for (const panel of panels) {
-    // Check hard constraint: instructors per panel
+  // **NEW BALANCED DISTRIBUTION STRATEGY**
+  // Phase 1: Find minimum capacity across all panels
+  const minGroups = Math.min(...panels.map(p => p.constraints.actualGroups));
+  const maxGroups = Math.max(...panels.map(p => p.constraints.actualGroups));
+  
+  // Prioritize panels with minimum groups first (balanced distribution)
+  const availablePanels = panels.filter(panel => {
     const totalInstructors = new Set([...panel.instructors, ...instructors]);
-    if (totalInstructors.size > constraints.instructorsPerPanel) {
-      continue; // Cannot violate hard constraint
-    }
+    return totalInstructors.size <= constraints.instructorsPerPanel; // Hard constraint check
+  });
 
-    // Calculate score based on current utilization
+  if (availablePanels.length === 0) {
+    return null; // No panel can accommodate this allocation
+  }
+
+  for (const panel of availablePanels) {
     const groupsAfterAllocation = panel.constraints.actualGroups + groupIds.length;
+    const totalInstructors = new Set([...panel.instructors, ...instructors]);
     const instructorsAfterAllocation = totalInstructors.size;
     
-    // Prefer panels that are closer to their desired capacity but not over
-    const groupUtilization = groupsAfterAllocation / constraints.groupsPerPanel;
-    const instructorUtilization = instructorsAfterAllocation / constraints.instructorsPerPanel;
+    let score = 0;
     
-    // Penalize going over the soft constraint (groups per panel)
-    let score = 1 - Math.abs(groupUtilization - 0.8); // Target 80% utilization
-    
-    if (groupsAfterAllocation > constraints.groupsPerPanel) {
-      score -= 0.3; // Penalty for exceeding soft constraint
+    // **PRIORITY 1: Balanced Distribution (Highest Priority)**
+    // Strongly prefer panels with fewer groups to ensure even distribution
+    if (panel.constraints.actualGroups === minGroups) {
+      score += 1000; // Very high priority for balance
+    } else if (panel.constraints.actualGroups < minGroups + 2) {
+      score += 500; // Medium priority for near-minimum panels
     }
     
-    // Bonus for better instructor utilization
-    score += (1 - Math.abs(instructorUtilization - 0.8)) * 0.3;
+    // **PRIORITY 2: Avoid Exceeding Soft Constraints**
+    if (groupsAfterAllocation <= constraints.groupsPerPanel) {
+      score += 100; // Bonus for staying within desired groups
+    } else {
+      score -= (groupsAfterAllocation - constraints.groupsPerPanel) * 50; // Heavy penalty for exceeding
+    }
+    
+    // **PRIORITY 3: Instructor Utilization**
+    const instructorUtilization = instructorsAfterAllocation / constraints.instructorsPerPanel;
+    score += (1 - instructorUtilization) * 30; // Prefer panels with more instructor capacity
+    
+    // **PRIORITY 4: Domain Diversity (Lower Priority)**
+    if (allGroups.length > 0) {
+      const groupsToAdd = groupIds.map(id => allGroups.find(g => g.id === id)).filter(Boolean);
+      const domainDiversityScore = calculateDomainDiversityForPanel(panel, groupsToAdd);
+      score += domainDiversityScore * 10; // Lower weight for diversity
+    }
     
     if (score > bestScore) {
       bestScore = score;
@@ -299,6 +330,191 @@ function findBestPanelForGroupSet(panels, groupIds, instructors, constraints) {
   }
 
   return bestPanel;
+}
+
+/**
+ * Calculate domain diversity score for a panel with new groups
+ */
+function calculateDomainDiversityForPanel(panel, newGroups) {
+  // Get current domain distribution in panel
+  const currentDomains = extractDomainsFromPanelGroups(panel.groups);
+  const newDomains = extractDomainsFromPanelGroups(newGroups);
+  const combinedDomains = combineDomainsDistribution(currentDomains, newDomains);
+  
+  const maxProjectsPerDomain = 4; // Soft constraint: max 3-4 projects per domain
+  let diversityScore = 1.0;
+  
+  // Penalize domains with too many projects
+  Object.values(combinedDomains).forEach(count => {
+    if (count > maxProjectsPerDomain) {
+      const excess = count - maxProjectsPerDomain;
+      diversityScore -= excess * 0.25; // 25% penalty per excess project
+    }
+  });
+  
+  // Bonus for having multiple domains
+  const uniqueDomains = Object.keys(combinedDomains).length;
+  if (uniqueDomains > 1 && uniqueDomains <= 4) {
+    diversityScore += uniqueDomains * 0.05; // 5% bonus per unique domain
+  }
+  
+  return Math.max(0, Math.min(1, diversityScore)); // Clamp between 0 and 1
+}
+
+/**
+ * Extract domains from panel groups
+ */
+function extractDomainsFromPanelGroups(groups) {
+  const domainCount = {};
+  
+  groups.forEach(group => {
+    group.projects.forEach(projectTitle => {
+      const detectedDomains = detectProjectDomains(projectTitle);
+      detectedDomains.forEach(domain => {
+        domainCount[domain] = (domainCount[domain] || 0) + 1;
+      });
+    });
+  });
+  
+  return domainCount;
+}
+
+/**
+ * Simple domain detection based on keywords in project titles
+ */
+function detectProjectDomains(projectTitle) {
+  const domains = [];
+  const title = projectTitle.toLowerCase();
+  
+  // AI/ML keywords
+  if (title.includes('ai') || title.includes('machine learning') || title.includes('neural') || 
+      title.includes('chatbot') || title.includes('nlp') || title.includes('computer vision') ||
+      title.includes('ml') || title.includes('artificial intelligence') || title.includes('deep learning')) {
+    domains.push('AI/ML');
+  }
+  
+  // Web Development
+  if (title.includes('web') || title.includes('website') || title.includes('e-commerce') || 
+      title.includes('platform') || title.includes('dashboard') || title.includes('portal') ||
+      title.includes('ecommerce') || title.includes('cms') || title.includes('blog')) {
+    domains.push('Web Development');
+  }
+  
+  // Mobile
+  if (title.includes('mobile') || title.includes('app') || title.includes('android') || 
+      title.includes('ios') || title.includes('flutter') || title.includes('react native') ||
+      title.includes('smartphone') || title.includes('tablet')) {
+    domains.push('Mobile Development');
+  }
+  
+  // IoT
+  if (title.includes('iot') || title.includes('smart home') || title.includes('sensor') || 
+      title.includes('automation') || title.includes('embedded') || title.includes('arduino') ||
+      title.includes('raspberry pi') || title.includes('smart') || title.includes('connected')) {
+    domains.push('IoT');
+  }
+  
+  // Cybersecurity
+  if (title.includes('security') || title.includes('cyber') || title.includes('encryption') || 
+      title.includes('blockchain') || title.includes('penetration') || title.includes('firewall') ||
+      title.includes('vulnerability') || title.includes('threat') || title.includes('secure')) {
+    domains.push('Cybersecurity');
+  }
+  
+  // Education
+  if (title.includes('education') || title.includes('learning') || title.includes('teaching') || 
+      title.includes('student') || title.includes('quiz') || title.includes('course') ||
+      title.includes('tutorial') || title.includes('exam') || title.includes('school')) {
+    domains.push('Education');
+  }
+  
+  // VR/AR
+  if (title.includes('vr') || title.includes('ar') || title.includes('virtual reality') || 
+      title.includes('augmented reality') || title.includes('3d') || title.includes('metaverse')) {
+    domains.push('VR/AR');
+  }
+  
+  // Game Development
+  if (title.includes('game') || title.includes('gaming') || title.includes('unity') || 
+      title.includes('graphics') || title.includes('animation') || title.includes('entertainment')) {
+    domains.push('Game Development');
+  }
+  
+  // Healthcare
+  if (title.includes('health') || title.includes('medical') || title.includes('hospital') || 
+      title.includes('patient') || title.includes('doctor') || title.includes('medicine') ||
+      title.includes('telemedicine') || title.includes('pharmacy')) {
+    domains.push('Healthcare');
+  }
+  
+  // Finance
+  if (title.includes('finance') || title.includes('banking') || title.includes('payment') || 
+      title.includes('trading') || title.includes('investment') || title.includes('budget') ||
+      title.includes('accounting') || title.includes('cryptocurrency')) {
+    domains.push('Finance');
+  }
+  
+  // Default to General if no specific domain detected
+  if (domains.length === 0) {
+    domains.push('General');
+  }
+  
+  return domains;
+}
+
+/**
+ * Combine two domain distributions
+ */
+function combineDomainsDistribution(domains1, domains2) {
+  const combined = { ...domains1 };
+  
+  Object.entries(domains2).forEach(([domain, count]) => {
+    combined[domain] = (combined[domain] || 0) + count;
+  });
+  
+  return combined;
+}
+
+/**
+ * Distribute non-supervisor instructors to panels to balance instructor counts
+ */
+function distributeNonSupervisorInstructors(panels, allInstructors, constraints) {
+  // Find instructors who have no projects (non-supervisors)
+  const nonSupervisorInstructors = allInstructors.filter(instructor => 
+    !instructor.projects || instructor.projects.length === 0
+  );
+
+  if (nonSupervisorInstructors.length === 0) {
+    return; // No non-supervisor instructors to distribute
+  }
+
+  console.log(`Distributing ${nonSupervisorInstructors.length} non-supervisor instructors among panels`);
+
+  // Sort panels by current instructor count (ascending) to balance distribution
+  const sortedPanels = [...panels].sort((a, b) => a.instructors.size - b.instructors.size);
+
+  // Distribute non-supervisor instructors round-robin style
+  nonSupervisorInstructors.forEach((instructor, index) => {
+    const targetPanel = sortedPanels[index % sortedPanels.length];
+    
+    // Check if adding this instructor would violate constraints
+    if (targetPanel.instructors.size < constraints.maxInstructorsPerPanel) {
+      targetPanel.instructors.add(instructor.name);
+      console.log(`✅ Assigned panel member "${instructor.name}" to Panel ${targetPanel.panelNumber}`);
+    } else {
+      // Try to find another panel with capacity
+      const availablePanel = sortedPanels.find(panel => 
+        panel.instructors.size < constraints.maxInstructorsPerPanel
+      );
+      
+      if (availablePanel) {
+        availablePanel.instructors.add(instructor.name);
+        console.log(`✅ Assigned panel member "${instructor.name}" to Panel ${availablePanel.panelNumber}`);
+      } else {
+        console.warn(`⚠️ Could not assign panel member "${instructor.name}" - all panels at capacity`);
+      }
+    }
+  });
 }
 
 /**
@@ -402,7 +618,7 @@ function createInstructorAssignments(panels, allInstructors) {
           panelAssigned: panel.panelNumber,
           supervisedProjects,
           projectCount: supervisedProjects.length,
-          status: 'Assigned'
+          status: supervisedProjects.length > 0 ? 'Supervisor' : 'Panel Member'
         });
         
         assignedInstructors.add(instructorName);
