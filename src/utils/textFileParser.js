@@ -6,17 +6,62 @@
  */
 
 /**
+ * Extract projects for a specific instructor from Excel data
+ * @param {string} instructorName - Name of the instructor
+ * @param {Array} excelData - Array of project data from Excel
+ * @returns {Array} Array of project titles for the instructor
+ */
+function extractProjectsForInstructor(instructorName, excelData) {
+  if (!excelData || !Array.isArray(excelData)) {
+    return [];
+  }
+
+  const projects = [];
+  const normalizedInstructorName = normalizeInstructorName(instructorName);
+
+  excelData.forEach(row => {
+    const supervisor = normalizeInstructorName(row.Supervisor || '');
+    const coSupervisor = normalizeInstructorName(row['Co-Supervisor'] || '');
+    const projectTitle = row['Project Title'] || row.projectTitle || row.Short_Title || row.projectId || '';
+
+    if (projectTitle && (supervisor === normalizedInstructorName || coSupervisor === normalizedInstructorName)) {
+      projects.push(projectTitle);
+    }
+  });
+
+  return [...new Set(projects)]; // Remove duplicates
+}
+
+/**
+ * Normalize instructor name for comparison
+ * @param {string} name - Instructor name
+ * @returns {string} Normalized name
+ */
+function normalizeInstructorName(name) {
+  if (!name || typeof name !== 'string') return '';
+  
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/^(dr\.|prof\.|mr\.|ms\.|mrs\.)\s*/i, '') // Remove titles
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .trim();
+}
+
+/**
  * Parse text file content to extract instructors and their supervised projects
  * 
  * Expected format:
  * - Each line contains: Instructor Name: Project1, Project2, Project3
  * - OR: Instructor Name - Project1, Project2, Project3
  * - OR: Instructor Name | Project1 | Project2 | Project3
+ * - OR: Just instructor names (one per line) - for use with Excel data
  * 
  * @param {string} textContent - Raw text content from file
+ * @param {Object} excelData - Optional Excel data containing supervisor-project mappings
  * @returns {Object} Parsed data with instructors and projects
  */
-export function parseInstructorProjectFile(textContent) {
+export function parseInstructorProjectFile(textContent, excelData = null) {
   if (!textContent || typeof textContent !== 'string') {
     throw new Error('Invalid text content provided');
   }
@@ -52,12 +97,25 @@ export function parseInstructorProjectFile(textContent) {
         projectsText = parts.slice(1).join('|');
       } else {
         // Check if it's just an instructor name without projects
-        if (trimmedLine.match(/^(Dr\.|Prof\.|Mr\.|Ms\.|Mrs\.)\s+.+/)) {
-          errors.push(`Line ${lineNumber}: Found instructor name "${trimmedLine}" but no projects specified. Expected format: "${trimmedLine}: Project1, Project2"`);
+        if (trimmedLine.match(/^(Dr\.|Prof\.|Mr\.|Ms\.|Mrs\.)\s+.+/) || trimmedLine.match(/^[A-Z][a-z]+\s+[A-Z]/)) {
+          // If we have Excel data, extract projects for this instructor
+          if (excelData && Array.isArray(excelData)) {
+            const instructorProjects = extractProjectsForInstructor(trimmedLine, excelData);
+            if (instructorProjects.length > 0) {
+              instructorName = trimmedLine;
+              projectsText = instructorProjects.join(', ');
+            } else {
+              errors.push(`Line ${lineNumber}: Instructor "${trimmedLine}" not found in Excel data or has no projects`);
+              continue;
+            }
+          } else {
+            errors.push(`Line ${lineNumber}: Found instructor name "${trimmedLine}" but no projects specified. Expected format: "${trimmedLine}: Project1, Project2" or provide Excel data with project mappings.`);
+            continue;
+          }
         } else {
           errors.push(`Line ${lineNumber}: Unable to parse format - "${trimmedLine}". Expected format: "Instructor Name: Project1, Project2"`);
+          continue;
         }
-        continue;
       }
 
       instructorName = instructorName.trim();
@@ -191,9 +249,10 @@ export function parseInstructorProjectFile(textContent) {
 /**
  * Read text file from File input
  * @param {File} file - File object from HTML input
+ * @param {Array} excelData - Optional Excel data for instructor-project mappings
  * @returns {Promise<Object>} Parsed instructor and project data
  */
-export function readTextFile(file) {
+export function readTextFile(file, excelData = null) {
   return new Promise((resolve, reject) => {
     if (!file) {
       reject(new Error('No file provided'));
@@ -210,7 +269,7 @@ export function readTextFile(file) {
     reader.onload = (e) => {
       try {
         const content = e.target.result;
-        const result = parseInstructorProjectFile(content);
+        const result = parseInstructorProjectFile(content, excelData);
         resolve(result);
       } catch (error) {
         reject(new Error(`Failed to parse file: ${error.message}`));
@@ -326,13 +385,137 @@ Dr. Bob Brown: Blockchain Voting System
 # - Use comma (,) to separate multiple projects
 # - Alternative formats also supported:
 #   Dr. John Smith - Project1, Project2
-#   Dr. John Smith | Project1 | Project2`;
+#   Dr. John Smith | Project1 | Project2
+
+# ALTERNATIVELY: For instructor-only lists (when you have Excel data uploaded):
+# Simply list instructor names one per line:
+# Dr. John Smith
+# Prof. Jane Doe
+# Dr. Mike Johnson
+# Prof. Alice Wilson
+# Dr. Bob Brown`;
 
   const blob = new Blob([content], { type: 'text/plain' });
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'instructor_list_template.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Extract supervisor statistics from Excel data
+ * @param {Array} excelData - Array of project data from Excel
+ * @returns {Object} Supervisor statistics
+ */
+export function extractSupervisorStatistics(excelData) {
+  if (!excelData || !Array.isArray(excelData)) {
+    return { supervisors: [], totalProjects: 0 };
+  }
+
+  const supervisorMap = new Map();
+
+  excelData.forEach((row, index) => {
+    const supervisor = row.Supervisor || '';
+    const coSupervisor = row['Co-Supervisor'] || '';
+    const projectTitle = row['Project Title'] || row.projectTitle || row.Short_Title || `Project_${index + 1}`;
+    const projectScope = row['Project Scope'] || row.projectScope || '';
+
+    // Process main supervisor
+    if (supervisor.trim()) {
+      const normalizedName = supervisor.trim();
+      if (!supervisorMap.has(normalizedName)) {
+        supervisorMap.set(normalizedName, {
+          name: normalizedName,
+          projects: [],
+          projectCount: 0,
+          role: 'Supervisor'
+        });
+      }
+      
+      const supervisorData = supervisorMap.get(normalizedName);
+      supervisorData.projects.push({
+        title: projectTitle,
+        scope: projectScope,
+        role: 'Primary Supervisor',
+        coSupervisor: coSupervisor || null
+      });
+      supervisorData.projectCount++;
+    }
+
+    // Process co-supervisor
+    if (coSupervisor.trim()) {
+      const normalizedName = coSupervisor.trim();
+      if (!supervisorMap.has(normalizedName)) {
+        supervisorMap.set(normalizedName, {
+          name: normalizedName,
+          projects: [],
+          projectCount: 0,
+          role: 'Co-Supervisor'
+        });
+      }
+      
+      const supervisorData = supervisorMap.get(normalizedName);
+      supervisorData.projects.push({
+        title: projectTitle,
+        scope: projectScope,
+        role: 'Co-Supervisor',
+        primarySupervisor: supervisor || null
+      });
+      supervisorData.projectCount++;
+    }
+  });
+
+  const supervisors = Array.from(supervisorMap.values()).map(supervisor => ({
+    ...supervisor,
+    projects: supervisor.projects.map(p => p.title) // Simplify for basic display
+  }));
+
+  return {
+    supervisors: supervisors.sort((a, b) => b.projectCount - a.projectCount),
+    totalProjects: excelData.length,
+    totalSupervisors: supervisors.length,
+    averageProjectsPerSupervisor: supervisors.length > 0 ? (supervisors.reduce((sum, s) => sum + s.projectCount, 0) / supervisors.length) : 0,
+    detailedData: Array.from(supervisorMap.values()) // Keep detailed data for Excel export
+  };
+}
+
+/**
+ * Download instructor-only template
+ */
+export function downloadInstructorOnlyTemplate() {
+  const content = `# Instructor List Template (for use with Excel data)
+# 
+# Instructions:
+# 1. Upload your FYP Excel file first (with Supervisor and Co-Supervisor columns)
+# 2. List instructor names below (one per line)
+# 3. The system will automatically extract their projects from the Excel data
+# 4. Use exact names as they appear in the Excel file
+#
+# Format: Just instructor names, one per line
+
+Dr. Muhammad Asim
+Mr. Saad Salman
+Dr. Hasan Mujtaba
+Dr. Hammad Majeed
+Dr. Aftab Maroof
+Prof. Ahmed Ali
+Dr. Sarah Khan
+Mr. Irfan Ullah
+
+# Notes:
+# - Names should match exactly with the Excel data
+# - Include titles (Dr., Prof., Mr., Ms., etc.) as they appear in Excel
+# - Empty lines and lines starting with # are ignored`;
+
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'instructor_only_template.txt';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

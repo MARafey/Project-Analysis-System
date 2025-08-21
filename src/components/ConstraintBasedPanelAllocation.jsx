@@ -1,10 +1,13 @@
 import React, { useState, useCallback } from 'react';
-import { readTextFile, downloadSampleTextFile, downloadInstructorListTemplate, convertInstructorListToFormat } from '../utils/textFileParser';
+import { readTextFile, downloadSampleTextFile, downloadInstructorListTemplate, downloadInstructorOnlyTemplate, extractSupervisorStatistics } from '../utils/textFileParser';
 import { allocateGroupsToPanels } from '../utils/constraintBasedPanelAllocation';
-import { exportConstraintBasedPanelAllocation } from '../utils/excelUtils';
+import { exportConstraintBasedPanelAllocation, exportSupervisorStatistics } from '../utils/excelUtils';
+import { readExcelFile } from '../utils/excelUtils';
 
 const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalysis = false }) => {
   const [parsedData, setParsedData] = useState(null);
+  const [excelData, setExcelData] = useState(null);
+  const [supervisorStats, setSupervisorStats] = useState(null);
   const [constraints, setConstraints] = useState({
     numberOfPanels: 3,
     instructorsPerPanel: 4,
@@ -16,8 +19,35 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
   const [error, setError] = useState(null);
   const [showFormatHelper, setShowFormatHelper] = useState(false);
 
-  // Handle file upload
-  const handleFileUpload = useCallback(async (file) => {
+  // Handle Excel file upload
+  const handleExcelUpload = useCallback(async (file) => {
+    if (!file) return;
+
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      const result = await readExcelFile(file);
+      setExcelData(result.data);
+      
+      // Extract supervisor statistics
+      const stats = extractSupervisorStatistics(result.data);
+      setSupervisorStats(stats);
+      
+      console.log('Excel Data Loaded:', {
+        totalProjects: result.totalProjects,
+        totalSupervisors: stats.totalSupervisors
+      });
+
+    } catch (err) {
+      setError(`Failed to process Excel file: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, []);
+
+  // Handle instructor text file upload
+  const handleTextFileUpload = useCallback(async (file) => {
     if (!file) return;
 
     setIsProcessing(true);
@@ -26,13 +56,17 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
     setAllocationResult(null);
 
     try {
-      const result = await readTextFile(file);
+      const result = await readTextFile(file, excelData);
       
       if (!result.success) {
         // Check if this is a format error (instructor names without projects)
-        const formatErrors = result.errors.filter(err => err.includes('but no projects specified'));
+        const formatErrors = result.errors.filter(err => err.includes('but no projects specified') || err.includes('not found in Excel data'));
         if (formatErrors.length > 0) {
-          setError(`Format Error: Your file contains instructor names without projects. Please use the format "Instructor Name: Project1, Project2" or download the template below.`);
+          if (excelData) {
+            setError(`Some instructors in your list were not found in the Excel data or have no projects. Please check the names match exactly with the Excel file.`);
+          } else {
+            setError(`Format Error: Your file contains instructor names without projects. Please upload an Excel file first, or use the format "Instructor Name: Project1, Project2".`);
+          }
           setShowFormatHelper(true);
         } else {
           setError(`File parsing failed: ${result.errors.slice(0, 3).join(', ')}${result.errors.length > 3 ? ` and ${result.errors.length - 3} more errors` : ''}`);
@@ -55,7 +89,7 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
     } finally {
       setIsProcessing(false);
     }
-  }, []);
+  }, [excelData]);
 
   // Handle constraint changes
   const handleConstraintChange = useCallback((field, value) => {
@@ -112,6 +146,21 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
     alert('Sample text file downloaded! Use this as a template for your instructor-project data.');
   }, []);
 
+  // Download supervisor statistics
+  const downloadSupervisorStats = useCallback(() => {
+    if (!supervisorStats) {
+      alert('No supervisor statistics available. Please upload an Excel file first.');
+      return;
+    }
+
+    const success = exportSupervisorStatistics(supervisorStats);
+    if (success) {
+      alert('Supervisor statistics downloaded successfully!');
+    } else {
+      alert('Failed to download supervisor statistics. Please try again.');
+    }
+  }, [supervisorStats]);
+
   return (
     <div className="constraint-based-panel-allocation">
       <div className="card">
@@ -142,42 +191,139 @@ const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalys
 
         {/* File Upload Section */}
         <div className="file-upload-section">
-          <h3>📁 Upload Instructor-Project File</h3>
-          <div className="upload-controls">
-            <input
-              type="file"
-              accept=".txt"
-              onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])}
-              className="file-input"
-              disabled={isProcessing}
-            />
-            <button
-              onClick={handleDownloadSample}
-              className="btn btn-secondary btn-sm"
-              type="button"
-            >
-              📥 Download Sample File
-            </button>
+          <h3>📁 Upload Files</h3>
+          
+          {/* Step 1: Excel File Upload */}
+          <div className="upload-step">
+            <h4>Step 1: Upload FYP Excel File (Optional but Recommended)</h4>
+            <div className="upload-controls">
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => e.target.files[0] && handleExcelUpload(e.target.files[0])}
+                className="file-input"
+                disabled={isProcessing}
+              />
+              {supervisorStats && (
+                <button
+                  onClick={downloadSupervisorStats}
+                  className="btn btn-primary btn-sm"
+                  type="button"
+                >
+                  📊 Download Supervisor Statistics
+                </button>
+              )}
+            </div>
             
-            <button
-              onClick={() => downloadInstructorListTemplate()}
-              className="btn btn-secondary btn-sm"
-              type="button"
-            >
-              📋 Download Template
-            </button>
+            {excelData && (
+              <div className="excel-preview">
+                <div className="excel-stats">
+                  <span className="stat-badge">✅ Excel Loaded</span>
+                  <span className="stat-badge">{supervisorStats?.totalProjects} Projects</span>
+                  <span className="stat-badge">{supervisorStats?.totalSupervisors} Supervisors</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Step 2: Instructor Text File Upload */}
+          <div className="upload-step">
+            <h4>Step 2: Upload Instructor List</h4>
+            <div className="upload-controls">
+              <input
+                type="file"
+                accept=".txt"
+                onChange={(e) => e.target.files[0] && handleTextFileUpload(e.target.files[0])}
+                className="file-input"
+                disabled={isProcessing}
+              />
+              <button
+                onClick={handleDownloadSample}
+                className="btn btn-secondary btn-sm"
+                type="button"
+              >
+                📥 Download Sample
+              </button>
+              
+              <button
+                onClick={() => downloadInstructorListTemplate()}
+                className="btn btn-secondary btn-sm"
+                type="button"
+              >
+                📋 Full Template
+              </button>
+
+              <button
+                onClick={() => downloadInstructorOnlyTemplate()}
+                className="btn btn-secondary btn-sm"
+                type="button"
+              >
+                📝 Instructor-Only Template
+              </button>
+            </div>
           </div>
           
           <div className="file-format-help">
-            <h4>Expected File Format:</h4>
-            <pre className="format-example">
+            <h4>File Format Options:</h4>
+            
+            <div className="format-option">
+              <h5>Option 1: With Excel Data (Recommended)</h5>
+              <pre className="format-example">
+{`Dr. Muhammad Asim
+Mr. Saad Salman
+Dr. Hasan Mujtaba`}
+              </pre>
+              <p>Just list instructor names (one per line). Projects will be extracted from Excel data.</p>
+            </div>
+
+            <div className="format-option">
+              <h5>Option 2: Traditional Format</h5>
+              <pre className="format-example">
 {`Dr. John Smith: AI Chatbot Development, Machine Learning System
 Prof. Jane Doe: Web Security Platform, E-commerce Development
 Dr. Mike Johnson: IoT Smart Home, Sensor Network, Automation`}
-            </pre>
-            <p>Each line should contain: <code>Instructor Name: Project1, Project2, Project3</code></p>
+              </pre>
+              <p>Each line should contain: <code>Instructor Name: Project1, Project2, Project3</code></p>
+            </div>
           </div>
         </div>
+
+        {/* Supervisor Statistics Preview */}
+        {supervisorStats && !parsedData && (
+          <div className="supervisor-stats-preview">
+            <h3>📊 Supervisor Statistics</h3>
+            <div className="preview-stats">
+              <div className="stat-item">
+                <span className="stat-label">Total Supervisors:</span>
+                <span className="stat-value">{supervisorStats.totalSupervisors}</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Total Projects:</span>
+                <span className="stat-value">{supervisorStats.totalProjects}</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Avg Projects/Supervisor:</span>
+                <span className="stat-value">{supervisorStats.averageProjectsPerSupervisor.toFixed(1)}</span>
+              </div>
+            </div>
+
+            <div className="top-supervisors">
+              <h4>Top Supervisors by Project Count:</h4>
+              <div className="supervisors-list">
+                {supervisorStats.supervisors.slice(0, 5).map((supervisor, index) => (
+                  <div key={supervisor.name} className="supervisor-preview">
+                    <span className="supervisor-rank">#{index + 1}</span>
+                    <span className="supervisor-name">{supervisor.name}</span>
+                    <span className="supervisor-count">{supervisor.projectCount} projects</span>
+                  </div>
+                ))}
+                {supervisorStats.supervisors.length > 5 && (
+                  <div className="more-supervisors">+{supervisorStats.supervisors.length - 5} more supervisors</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Data Preview */}
         {parsedData && (
@@ -325,33 +471,53 @@ Dr. Mike Johnson: IoT Smart Home, Sensor Network, Automation`}
           <div className="format-helper">
             <div className="format-helper-content">
               <h3>📝 Format Help</h3>
-              <p>Your file contains instructor names but no project assignments. Here's how to fix it:</p>
+              <p>{excelData ? 'Some instructors in your list were not found in the Excel data.' : 'Your file contains instructor names but no project assignments.'} Here's how to fix it:</p>
               
               <div className="format-options">
-                <div className="format-option">
-                  <h4>Option 1: Download Template</h4>
-                  <p>Use the template button above to get a properly formatted file that you can edit.</p>
-                </div>
-                
-                <div className="format-option">
-                  <h4>Option 2: Manual Formatting</h4>
-                  <p>Add project names to each instructor line using this format:</p>
-                  <pre className="format-example">
+                {excelData ? (
+                  <>
+                    <div className="format-option">
+                      <h4>Check Instructor Names</h4>
+                      <p>Make sure instructor names in your text file match exactly with the Excel data:</p>
+                      <div className="excel-supervisors-sample">
+                        <h5>Available supervisors in Excel:</h5>
+                        <div className="supervisor-names">
+                          {supervisorStats?.supervisors.slice(0, 8).map(sup => (
+                            <span key={sup.name} className="supervisor-name-tag">{sup.name}</span>
+                          ))}
+                          {supervisorStats?.supervisors.length > 8 && (
+                            <span className="more-tag">+{supervisorStats.supervisors.length - 8} more</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="format-option">
+                      <h4>Instructor-Only Template</h4>
+                      <p>Use the instructor-only template with names from your Excel data:</p>
+                      <pre className="format-example">
+{supervisorStats?.supervisors.slice(0, 3).map(sup => sup.name).join('\n') || 'Dr. Muhammad Asim\nMr. Saad Salman\nDr. Hasan Mujtaba'}
+                      </pre>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="format-option">
+                      <h4>Option 1: Upload Excel File First</h4>
+                      <p>Upload your FYP Excel file first, then use instructor-only list format.</p>
+                    </div>
+                    
+                    <div className="format-option">
+                      <h4>Option 2: Traditional Format</h4>
+                      <p>Add project names to each instructor line using this format:</p>
+                      <pre className="format-example">
 {`Dr. John Smith: Project A, Project B
 Prof. Jane Doe: Web Security Platform
 Ms. Alice Wilson: Data Analytics Dashboard, ML System`}
-                  </pre>
-                </div>
-                
-                <div className="format-option">
-                  <h4>Option 3: Quick Fix</h4>
-                  <p>If you need to test the system quickly, you can add placeholder projects:</p>
-                  <pre className="format-example">
-{`Dr. Hasan Mujtaba: Project 1A, Project 1B
-Dr. Hammad Majeed: Project 2A, Project 2B
-Dr. Aftab Maroof: Project 3A`}
-                  </pre>
-                </div>
+                      </pre>
+                    </div>
+                  </>
+                )}
               </div>
               
               <div className="format-helper-actions">
@@ -362,12 +528,21 @@ Dr. Aftab Maroof: Project 3A`}
                   Close Help
                 </button>
                 
-                <button
-                  onClick={() => downloadInstructorListTemplate()}
-                  className="btn btn-primary"
-                >
-                  📋 Download Template
-                </button>
+                {excelData ? (
+                  <button
+                    onClick={() => downloadInstructorOnlyTemplate()}
+                    className="btn btn-primary"
+                  >
+                    📝 Download Instructor-Only Template
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => downloadInstructorListTemplate()}
+                    className="btn btn-primary"
+                  >
+                    📋 Download Full Template
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -596,26 +771,36 @@ Dr. Aftab Maroof: Project 3A`}
               <div className="instruction-step">
                 <div className="step-number">1</div>
                 <div className="step-content">
-                  <h4>Prepare Text File</h4>
-                  <p>Create a text file with instructor-project mappings. Each line should contain an instructor name followed by their supervised projects.</p>
+                  <h4>Upload Excel File (Recommended)</h4>
+                  <p>Upload your FYP Excel file containing supervisor and project information. This enables automatic project extraction and provides supervisor statistics.</p>
                 </div>
               </div>
               
               <div className="instruction-step">
                 <div className="step-number">2</div>
                 <div className="step-content">
-                  <h4>Upload & Configure</h4>
-                  <p>Upload your file and set the constraints. Hard constraints cannot be violated, while soft constraints can be exceeded if necessary.</p>
+                  <h4>Upload Instructor List</h4>
+                  <p>Upload a text file with instructor names. If you uploaded Excel data, just list instructor names (one per line). Otherwise, use the format "Instructor Name: Project1, Project2".</p>
                 </div>
               </div>
               
               <div className="instruction-step">
                 <div className="step-number">3</div>
                 <div className="step-content">
-                  <h4>Generate & Export</h4>
-                  <p>Run the allocation algorithm and download the comprehensive Excel report with all panel assignments and constraint analysis.</p>
+                  <h4>Configure & Generate</h4>
+                  <p>Set the constraints and run the allocation algorithm. Download the comprehensive Excel report with panel assignments and statistics.</p>
                 </div>
               </div>
+            </div>
+
+            <div className="workflow-benefits">
+              <h4>✨ Benefits of the New Workflow:</h4>
+              <ul>
+                <li>🎯 <strong>Simplified Input:</strong> Just list instructor names when you have Excel data</li>
+                <li>📊 <strong>Automatic Statistics:</strong> Get supervisor workload distribution automatically</li>
+                <li>🔄 <strong>Data Consistency:</strong> Projects are extracted directly from your Excel source</li>
+                <li>📈 <strong>Enhanced Reports:</strong> Download detailed supervisor statistics Excel files</li>
+              </ul>
             </div>
           </div>
         )}

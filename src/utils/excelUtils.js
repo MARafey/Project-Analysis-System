@@ -567,6 +567,102 @@ export function exportConstraintBasedPanelAllocation(allocationResult, filename 
   }
 }
 
+// Export supervisor statistics to Excel
+export function exportSupervisorStatistics(supervisorStats, filename = 'supervisor_project_statistics.xlsx') {
+  try {
+    const workbook = XLSX.utils.book_new();
+
+    // Summary Sheet
+    const summaryData = [
+      { 'Metric': 'Total Supervisors', 'Value': supervisorStats.totalSupervisors },
+      { 'Metric': 'Total Projects', 'Value': supervisorStats.totalProjects },
+      { 'Metric': 'Average Projects per Supervisor', 'Value': supervisorStats.averageProjectsPerSupervisor.toFixed(2) },
+      { 'Metric': '', 'Value': '' }, // Separator
+      { 'Metric': 'TOP SUPERVISORS BY PROJECT COUNT', 'Value': '' },
+      ...supervisorStats.supervisors.slice(0, 5).map((sup, index) => ({
+        'Metric': `${index + 1}. ${sup.name}`,
+        'Value': `${sup.projectCount} projects`
+      }))
+    ];
+    
+    const summarySheet = XLSX.utils.json_to_sheet(summaryData);
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+
+    // Supervisor Overview Sheet
+    const supervisorOverviewData = supervisorStats.supervisors.map((supervisor, index) => ({
+      'S.No': index + 1,
+      'Supervisor Name': supervisor.name,
+      'Total Projects': supervisor.projectCount,
+      'Primary Role': supervisor.role,
+      'Projects': supervisor.projects.join(', ')
+    }));
+    
+    const supervisorOverviewSheet = XLSX.utils.json_to_sheet(supervisorOverviewData);
+    XLSX.utils.book_append_sheet(workbook, supervisorOverviewSheet, 'Supervisor Overview');
+
+    // Detailed Project Assignments Sheet
+    const detailedData = [];
+    supervisorStats.detailedData.forEach(supervisor => {
+      supervisor.projects.forEach((project, index) => {
+        detailedData.push({
+          'Supervisor Name': supervisor.name,
+          'Project Title': project.title,
+          'Project Scope': project.scope ? project.scope.substring(0, 100) + (project.scope.length > 100 ? '...' : '') : '',
+          'Supervision Role': project.role,
+          'Co-Supervisor': project.coSupervisor || '',
+          'Primary Supervisor': project.primarySupervisor || ''
+        });
+      });
+    });
+    
+    if (detailedData.length > 0) {
+      const detailedSheet = XLSX.utils.json_to_sheet(detailedData);
+      XLSX.utils.book_append_sheet(workbook, detailedSheet, 'Detailed Assignments');
+    }
+
+    // Project Count Distribution Sheet
+    const distributionData = [];
+    const projectCountGroups = {};
+    
+    supervisorStats.supervisors.forEach(supervisor => {
+      const count = supervisor.projectCount;
+      const group = count === 1 ? '1 Project' : 
+                   count <= 3 ? '2-3 Projects' : 
+                   count <= 5 ? '4-5 Projects' : 
+                   '6+ Projects';
+      
+      if (!projectCountGroups[group]) {
+        projectCountGroups[group] = [];
+      }
+      projectCountGroups[group].push(supervisor);
+    });
+
+    Object.entries(projectCountGroups).forEach(([group, supervisors]) => {
+      distributionData.push({
+        'Project Count Range': group,
+        'Number of Supervisors': supervisors.length,
+        'Percentage': ((supervisors.length / supervisorStats.totalSupervisors) * 100).toFixed(1) + '%',
+        'Supervisor Names': supervisors.map(s => s.name).join(', ')
+      });
+    });
+    
+    if (distributionData.length > 0) {
+      const distributionSheet = XLSX.utils.json_to_sheet(distributionData);
+      XLSX.utils.book_append_sheet(workbook, distributionSheet, 'Distribution');
+    }
+
+    // Convert to blob and download
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, filename);
+
+    return true;
+  } catch (error) {
+    console.error('Failed to export supervisor statistics:', error);
+    return false;
+  }
+}
+
 // Create sample Excel file for testing
 export function createSampleExcelFile() {
   const sampleData = [
