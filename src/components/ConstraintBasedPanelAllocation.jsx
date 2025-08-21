@@ -3,7 +3,7 @@ import { readTextFile, downloadSampleTextFile, downloadInstructorListTemplate, c
 import { allocateGroupsToPanels } from '../utils/constraintBasedPanelAllocation';
 import { exportConstraintBasedPanelAllocation } from '../utils/excelUtils';
 
-const ConstraintBasedPanelAllocation = () => {
+const ConstraintBasedPanelAllocation = ({ similarityResults = null, hasFYPAnalysis = false }) => {
   const [parsedData, setParsedData] = useState(null);
   const [constraints, setConstraints] = useState({
     numberOfPanels: 3,
@@ -76,7 +76,7 @@ const ConstraintBasedPanelAllocation = () => {
     setError(null);
 
     try {
-      const result = allocateGroupsToPanels(parsedData, constraints);
+      const result = allocateGroupsToPanels(parsedData, constraints, similarityResults);
       setAllocationResult(result);
       
       if (!result.success) {
@@ -121,6 +121,23 @@ const ConstraintBasedPanelAllocation = () => {
             Upload a text file with instructor-project mappings and configure hard/soft constraints
             to generate optimal panel allocations.
           </p>
+          
+          {/* Similarity Analysis Status */}
+          <div className={`similarity-status ${hasFYPAnalysis ? 'available' : 'unavailable'}`}>
+            {hasFYPAnalysis ? (
+              <div className="status-indicator success">
+                <span className="status-icon">✓</span>
+                <span className="status-text">FYP Similarity Analysis Available</span>
+                <span className="status-detail">Panel allocation will consider project similarity for better grouping</span>
+              </div>
+            ) : (
+              <div className="status-indicator warning">
+                <span className="status-icon">⚠️</span>
+                <span className="status-text">No FYP Analysis Data</span>
+                <span className="status-detail">Panel allocation will be based on instructor overlap only. For better results, run FYP Analysis first.</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* File Upload Section */}

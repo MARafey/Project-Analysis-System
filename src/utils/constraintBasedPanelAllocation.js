@@ -6,13 +6,14 @@
  */
 
 /**
- * Allocate groups and instructors to panels based on constraints
+ * Allocate groups and instructors to panels based on constraints and similarity
  * 
  * @param {Object} parsedData - Data from text file parser
  * @param {Object} constraints - Panel allocation constraints
+ * @param {Array} similarityResults - Optional similarity analysis results from FYP analysis
  * @returns {Object} Allocation result
  */
-export function allocateGroupsToPanels(parsedData, constraints) {
+export function allocateGroupsToPanels(parsedData, constraints, similarityResults = null) {
   const {
     numberOfPanels,
     instructorsPerPanel,
@@ -45,8 +46,8 @@ export function allocateGroupsToPanels(parsedData, constraints) {
     }
   }));
 
-  // Step 2: Identify overlapping groups (groups that share projects or supervisors)
-  const overlappingGroupSets = findOverlappingGroups(groups);
+  // Step 2: Identify overlapping groups (considers both supervisors and similarity)
+  const overlappingGroupSets = findOverlappingGroups(groups, similarityResults);
   
   // Step 3: Allocate overlapping group sets first (most constrained)
   const allocationResults = {
@@ -168,11 +169,24 @@ export function allocateGroupsToPanels(parsedData, constraints) {
 }
 
 /**
- * Find overlapping groups (groups that share projects or supervisors)
+ * Find overlapping groups (groups that share projects, supervisors, or have similar projects)
  */
-function findOverlappingGroups(groups) {
+function findOverlappingGroups(groups, similarityResults = null) {
   const overlappingSets = [];
   const processed = new Set();
+
+  // Create a project-to-project similarity map for faster lookup
+  const similarityMap = new Map();
+  if (similarityResults && Array.isArray(similarityResults)) {
+    similarityResults.forEach(result => {
+      if (result.similarityScore >= 0.3) { // Minimum similarity threshold
+        const key1 = `${result.project1Id}-${result.project2Id}`;
+        const key2 = `${result.project2Id}-${result.project1Id}`;
+        similarityMap.set(key1, result.similarityScore);
+        similarityMap.set(key2, result.similarityScore);
+      }
+    });
+  }
 
   for (const group of groups) {
     if (processed.has(group.id)) continue;
@@ -187,8 +201,19 @@ function findOverlappingGroups(groups) {
 
       const hasProjectOverlap = otherGroup.projects.some(project => groupProjects.has(project));
       const hasSupervisorOverlap = otherGroup.supervisors.some(supervisor => groupSupervisors.has(supervisor));
+      
+      // Check for similarity-based overlap (if similarity data is available)
+      let hasSimilarityOverlap = false;
+      if (similarityMap.size > 0) {
+        hasSimilarityOverlap = group.projects.some(project1 => 
+          otherGroup.projects.some(project2 => {
+            const key = `${project1}-${project2}`;
+            return similarityMap.has(key) && similarityMap.get(key) >= 0.5; // High similarity threshold
+          })
+        );
+      }
 
-      if (hasProjectOverlap || hasSupervisorOverlap) {
+      if (hasProjectOverlap || hasSupervisorOverlap || hasSimilarityOverlap) {
         overlappingSet.add(otherGroup.id);
         // Add this group's projects and supervisors to check for transitive overlaps
         otherGroup.projects.forEach(project => groupProjects.add(project));
@@ -206,8 +231,19 @@ function findOverlappingGroups(groups) {
 
           const hasProjectOverlap = otherGroup.projects.some(project => groupProjects.has(project));
           const hasSupervisorOverlap = otherGroup.supervisors.some(supervisor => groupSupervisors.has(supervisor));
+          
+          // Check similarity for transitive overlaps too
+          let hasSimilarityOverlap = false;
+          if (similarityMap.size > 0) {
+            hasSimilarityOverlap = Array.from(groupProjects).some(project1 => 
+              otherGroup.projects.some(project2 => {
+                const key = `${project1}-${project2}`;
+                return similarityMap.has(key) && similarityMap.get(key) >= 0.5;
+              })
+            );
+          }
 
-          if (hasProjectOverlap || hasSupervisorOverlap) {
+          if (hasProjectOverlap || hasSupervisorOverlap || hasSimilarityOverlap) {
             overlappingSet.add(otherGroup.id);
             otherGroup.projects.forEach(project => groupProjects.add(project));
             otherGroup.supervisors.forEach(supervisor => groupSupervisors.add(supervisor));

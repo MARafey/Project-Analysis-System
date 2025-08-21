@@ -1818,4 +1818,73 @@ code {
   .format-helper-content {
     padding: 1.5rem;
   }
+}
+
+/* Similarity Status Indicator */
+.similarity-status {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 2px solid;
+}
+
+.similarity-status.available {
+  background: #d1fae5;
+  border-color: #059669;
+}
+
+.similarity-status.unavailable {
+  background: #fef3c7;
+  border-color: #d97706;
+}
+
+.status-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.status-indicator .status-icon {
+  font-size: 1.25rem;
+}
+
+.status-indicator .status-text {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.status-indicator.success .status-text {
+  color: #065f46;
+}
+
+.status-indicator.warning .status-text {
+  color: #92400e;
+}
+
+.status-indicator .status-detail {
+  font-size: 0.875rem;
+  line-height: 1.4;
+  opacity: 0.8;
+}
+
+.status-indicator.success .status-detail {
+  color: #047857;
+}
+
+.status-indicator.warning .status-detail {
+  color: #78350f;
+}
+
+@media (max-width: 768px) {
+  .similarity-status {
+    padding: 0.75rem;
+  }
+  
+  .status-indicator .status-text {
+    font-size: 0.875rem;
+  }
+  
+  .status-indicator .status-detail {
+    font-size: 0.8rem;
+  }
 } 

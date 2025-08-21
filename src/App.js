@@ -583,7 +583,7 @@ function App() {
                 <h2>🏛️ Panel Creation System</h2>
                 <p className="section-description">
                   Create evaluation panels from instructor-project data using constraint-based allocation. 
-                  This system works independently from the FYP analysis above.
+                  For optimal results, run FYP analysis first to enable similarity-based grouping.
                 </p>
               </div>
 
@@ -597,7 +597,10 @@ function App() {
               </div>
 
               {showConstraintAllocation && (
-                <ConstraintBasedPanelAllocation />
+                <ConstraintBasedPanelAllocation 
+                  similarityResults={similarityResults}
+                  hasFYPAnalysis={similarityResults && similarityResults.length > 0}
+                />
               )}
             </div>
           </div>
