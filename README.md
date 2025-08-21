@@ -1,15 +1,26 @@
-# 🎓 FYP Analysis System
+# 🎓 FYP Analysis & Panel Creation System
 
-A comprehensive React-based application for analyzing Final Year Projects (FYPs), featuring domain categorization, similarity analysis, and AI-powered insights.
+A comprehensive React-based application featuring **two powerful systems in one platform**:
+
+1. **FYP Analysis System** - Domain categorization, similarity analysis, and AI-powered insights
+2. **Panel Creation System** - Constraint-based evaluation panel allocation with instructor-project management
 
 ## ✨ Features
 
-### 🔍 Core Analysis
+### 🔍 FYP Analysis System
 
 - **Domain Categorization**: Automatically categorize projects across 15+ technical domains
 - **Similarity Detection**: Advanced TF-IDF analysis to find similar projects
 - **AI Enhancement**: Optional Gemini AI integration for intelligent categorization
 - **Multi-format Support**: Supports Excel (.xlsx, .xls) and CSV files
+
+### 🏛️ Panel Creation System
+
+- **Constraint-Based Allocation**: Hard and soft constraint management for panel creation
+- **Text File Input**: Simple instructor-project mapping format
+- **Overlap Detection**: Automatic detection of overlapping projects and supervisors
+- **Optimized Assignment**: Intelligent instructor assignment based on project count
+- **Multi-sheet Reports**: Comprehensive Excel output with allocation details
 
 ### 📊 Analysis Domains
 
@@ -31,10 +42,10 @@ A comprehensive React-based application for analyzing Final Year Projects (FYPs)
 
 ### 📋 Reporting
 
-- **Multi-sheet Excel Reports**: Organized by domains and similarity levels
-- **Detailed Analysis**: Explanations for categorization and similarity findings
+- **Multi-sheet Excel Reports**: Organized by domains, similarity levels, and panel allocations
+- **Detailed Analysis**: Explanations for categorization, similarity findings, and allocation decisions
 - **Interactive Dashboard**: Real-time results with filtering capabilities
-- **Download Options**: Domain reports, similarity reports, and combined analysis
+- **Download Options**: Domain reports, similarity reports, panel allocation reports, and combined analysis
 
 ## 🚀 Getting Started
 
@@ -48,7 +59,7 @@ A comprehensive React-based application for analyzing Final Year Projects (FYPs)
 1. **Clone or Download the Project**
 
    ```bash
-   cd "FYP Automation"
+   cd "Project-Analysis-System"
    ```
 
 2. **Install Dependencies**
@@ -72,31 +83,69 @@ A comprehensive React-based application for analyzing Final Year Projects (FYPs)
 npm run build
 ```
 
-## 🔍 Enhanced Similarity Analysis FeaturesThe system now provides **detailed, specific reasons** for why two FYPs are considered similar, including:### 🎯 Multi-Layer Analysis- **Technology Stack Detection**: Identifies shared programming languages, frameworks, and tools- **Feature Overlap Analysis**: Finds common functional requirements and capabilities - **Methodology Matching**: Detects similar development approaches and research methods- **Domain Targeting**: Identifies shared application areas and industries- **Goal Alignment**: Recognizes common project objectives and outcomes- **Textual Similarity**: Analyzes significant terminology and concept overlap### 📋 Comprehensive Reporting- **Structured Explanations**: Each similarity includes specific reasons with ✓ indicators- **Detailed Interpretations**: Actionable insights and recommendations for each pair- **Enhanced Excel Reports**: Multi-column breakdown with specific reasons, interpretations, and full explanations- **Interactive UI**: Preview of key reasons directly in the web interface### 🎚️ Similarity Levels with Context- **Very High (>70%)**: Nearly identical approaches - consider collaboration or review for duplication- **High (50-70%)**: Significant overlap - opportunities for cross-referencing methodologies- **Medium (30-50%)**: Some common elements - potential for knowledge sharing- **Low (<30%)**: Basic conceptual similarities - largely distinct approaches## 📚 How to Use
+## 🎯 How to Use
 
-### 1. Upload Data
+### 📊 FYP Analysis System
+
+#### 1. Upload Data
 
 - Click on the upload area or drag & drop your Excel file
 - Supported formats: `.xlsx`, `.xls`, `.csv`
 - Required columns: Project Title, Project Scope/Description
 
-### 2. Configure AI (Optional)
+#### 2. Configure AI (Optional)
 
 - Click "Settings" in the header
 - Enter your Gemini API key for enhanced analysis
 - Get your free API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
 
-### 3. Start Analysis
+#### 3. Start Analysis
 
 - Review loaded project count
 - Click "Start Analysis"
 - Monitor real-time progress
 
-### 4. Download Reports
+#### 4. Download Reports
 
 - View results in the interactive dashboard
 - Download individual reports (Domains, Similarity)
 - Get complete combined analysis report
+
+### 🏛️ Panel Creation System
+
+#### 1. Navigate to Panel Creation
+
+- Scroll down to the "Panel Creation System" section
+- Click "Start Panel Creation" to expand the interface
+
+#### 2. Prepare Your Data
+
+- **Format**: Text file with instructor-project mappings
+- **Syntax**: `Instructor Name: Project1, Project2, Project3`
+- **Example**:
+  ```
+  Dr. John Smith: Web Security Platform, Data Analytics Dashboard
+  Prof. Jane Doe: Machine Learning System, IoT Sensor Network
+  Ms. Alice Wilson: Blockchain Voting System
+  ```
+
+#### 3. Upload and Configure
+
+- Upload your text file
+- Set constraints:
+  - **Hard Constraints**: Number of panels, max instructors per panel
+  - **Soft Constraints**: Desired groups per panel (can be exceeded if necessary)
+- Click "Generate Panel Allocation"
+
+#### 4. Download Results
+
+- Review allocation summary
+- Download comprehensive Excel report with multiple sheets:
+  - Panel Allocation
+  - Instructor Assignments
+  - Summary
+  - Detailed Groups
+  - Allocation Log
 
 ## 🛠 Technical Architecture
 
@@ -113,6 +162,13 @@ npm run build
 - **Stopword Removal**: Enhanced text cleaning
 - **Cosine Similarity**: Mathematical similarity computation
 
+### Panel Allocation Algorithm
+
+- **Constraint Management**: Hard vs. soft constraint handling
+- **Group Formation**: Automatic detection of overlapping projects
+- **Load Balancing**: Optimized distribution across panels
+- **Instructor Assignment**: Smart assignment based on project supervision count
+
 ### AI Integration
 
 - **Google Generative AI**: Gemini API for intelligent categorization
@@ -122,10 +178,13 @@ npm run build
 ### File Processing
 
 - **XLSX Library**: Client-side Excel file reading/writing
+- **Text File Parser**: Custom parser for instructor-project mappings
 - **Multi-sheet Export**: Organized data output
 - **File Validation**: Format and structure checking
 
 ## 📊 Sample Data
+
+### FYP Analysis
 
 The system includes a sample data generator. Click "Sample Data" to download a test Excel file with:
 
@@ -134,6 +193,13 @@ The system includes a sample data generator. Click "Sample Data" to download a t
 - Smart Home IoT Security System
 - VR Educational Game
 - Blockchain Voting System
+
+### Panel Creation
+
+Download sample text files for panel creation:
+
+- **Sample File**: Contains example instructor-project mappings
+- **Template**: Clean template for your own data
 
 ## 🔧 Configuration
 
@@ -149,14 +215,22 @@ REACT_APP_GEMINI_API_KEY=your_gemini_api_key_here
 
 ```
 src/
-├── components/          # React components (future expansion)
+├── components/
+│   ├── FileUpload.jsx           # File upload component
+│   ├── ProgressTracker.jsx      # Analysis progress tracking
+│   ├── ResultsDisplay.jsx       # Results display
+│   ├── PanelAllocation.jsx      # Original panel allocation
+│   └── ConstraintBasedPanelAllocation.jsx  # New constraint-based system
 ├── utils/
-│   ├── textProcessing.js   # TF-IDF and NLP functions
-│   ├── excelUtils.js       # File processing utilities
-│   └── geminiApi.js        # AI integration
-├── App.js              # Main application component
-├── index.js            # React entry point
-└── index.css           # Application styles
+│   ├── textProcessing.js        # TF-IDF and NLP functions
+│   ├── excelUtils.js            # File processing utilities
+│   ├── geminiApi.js             # AI integration
+│   ├── panelAllocation.js       # Original allocation algorithm
+│   ├── constraintBasedPanelAllocation.js  # New constraint algorithm
+│   └── textFileParser.js        # Text file parsing utilities
+├── App.js                       # Main application component
+├── index.js                     # React entry point
+└── index.css                    # Application styles
 ```
 
 ## 🚀 Deployment
@@ -176,7 +250,7 @@ src/
 **GitHub Pages**:
 
 1. Install gh-pages: `npm install --save-dev gh-pages`
-2. Add to package.json: `"homepage": "https://yourusername.github.io/fyp-analysis"`
+2. Add to package.json: `"homepage": "https://yourusername.github.io/project-analysis-system"`
 3. Deploy: `npm run deploy`
 
 ### Custom Server
@@ -197,7 +271,32 @@ The `build` folder contains static files that can be served by any web server:
 3. **Multi-domain Support**: Projects can belong to multiple domains
 4. **Confidence Scoring**: Numerical confidence for categorization decisions
 
-### Enhanced Similarity Analysis1. **Text Preprocessing**: Tokenization, stopword removal, normalization2. **TF-IDF Vectorization**: Convert text to numerical vectors3. **Cosine Similarity**: Calculate similarity scores between project pairs4. **Detailed Reason Analysis**: Multi-layer similarity detection including: - **Technology Stack**: Shared programming languages, frameworks, and tools - **Feature Overlap**: Common functional requirements and capabilities - **Methodology**: Similar development approaches and research methods - **Application Domain**: Target industries and use cases - **Project Goals**: Shared objectives and outcomes - **Textual Overlap**: Significant common terminology and concepts5. **Comprehensive Explanations**: Each similarity pair includes: - Specific reasons with checkmark indicators (✓) - Detailed interpretation and recommendations - Actionable insights for project coordination6. **Level Classification**: Very High (>70%), High (50-70%), Medium (30-50%), Low (<30%)
+### Enhanced Similarity Analysis
+
+1. **Text Preprocessing**: Tokenization, stopword removal, normalization
+2. **TF-IDF Vectorization**: Convert text to numerical vectors
+3. **Cosine Similarity**: Calculate similarity scores between project pairs
+4. **Detailed Reason Analysis**: Multi-layer similarity detection including:
+   - **Technology Stack**: Shared programming languages, frameworks, and tools
+   - **Feature Overlap**: Common functional requirements and capabilities
+   - **Methodology**: Similar development approaches and research methods
+   - **Application Domain**: Target industries and use cases
+   - **Project Goals**: Shared objectives and outcomes
+   - **Textual Overlap**: Significant common terminology and concepts
+5. **Comprehensive Explanations**: Each similarity pair includes:
+   - Specific reasons with checkmark indicators (✓)
+   - Detailed interpretation and recommendations
+   - Actionable insights for project coordination
+6. **Level Classification**: Very High (>70%), High (50-70%), Medium (30-50%), Low (<30%)
+
+### Panel Allocation Algorithm
+
+1. **Data Parsing**: Parse instructor-project mappings from text files
+2. **Group Formation**: Identify overlapping projects and form groups
+3. **Constraint Validation**: Check hard constraints (panels, instructors per panel)
+4. **Allocation Strategy**: Prioritize overlapping groups, then individual groups
+5. **Instructor Assignment**: Assign instructors to panels based on project supervision count
+6. **Load Balancing**: Distribute groups evenly while respecting constraints
 
 ## 🔍 Troubleshooting
 
@@ -210,9 +309,16 @@ The `build` folder contains static files that can be served by any web server:
 
 **File Upload Issues**:
 
-- Ensure file has proper headers (Project Title, Project Scope)
-- Check file format (.xlsx, .xls, .csv only)
+- **FYP Analysis**: Ensure file has proper headers (Project Title, Project Scope)
+- **Panel Creation**: Use correct text format: `Instructor: Project1, Project2`
+- Check file format (.xlsx, .xls, .csv for FYP; .txt for panels)
 - Verify file size (< 10MB recommended)
+
+**Panel Creation Format Issues**:
+
+- **Error**: "instructor names without projects"
+- **Solution**: Use the format helper to download template or convert your list
+- **Quick Fix**: Add placeholder projects like "Project 1A, Project 1B"
 
 **AI Integration Issues**:
 
@@ -225,10 +331,11 @@ The `build` folder contains static files that can be served by any web server:
 - For large datasets (>100 projects), allow extra processing time
 - Use AI enhancement sparingly for faster processing
 - Close other browser tabs during analysis for optimal performance
+- Panel creation works best with <50 instructors for optimal constraint satisfaction
 
 ## 🤝 Contributing
 
-This is an academic project for FYP analysis. Contributions and improvements are welcome:
+This is an academic project for FYP analysis and panel creation. Contributions and improvements are welcome:
 
 1. Fork the repository
 2. Create a feature branch
@@ -247,15 +354,18 @@ For technical support or questions:
 - Check the troubleshooting section above
 - Review browser console for error messages
 - Ensure all dependencies are properly installed
+- For panel creation issues, use the built-in format helper
 
 ## 🔮 Future Enhancements
 
-- **Advanced Visualizations**: Charts and graphs for domain distribution
+- **Advanced Visualizations**: Charts and graphs for domain distribution and panel load
 - **Export Formats**: PDF and JSON export options
 - **Batch Processing**: Multiple file analysis
 - **Custom Domains**: User-defined categorization domains
 - **Collaboration Features**: Shared analysis and comments
 - **API Integration**: Connect with institutional databases
+- **Panel Optimization**: Machine learning-based panel allocation optimization
+- **Real-time Collaboration**: Multi-user panel creation and editing
 
 ---
 
