@@ -320,6 +320,133 @@ export function exportCombinedReports(domainData, similarityData, filename = 'fy
   }
 }
 
+// Export panel allocation results to Excel
+export function exportPanelAllocationReport(panelReport, filename = 'panel_allocation_report.xlsx') {
+  try {
+    const workbook = XLSX.utils.book_new();
+
+    // Summary Sheet
+    const summaryData = [
+      { Metric: 'Total Projects', Value: panelReport.summary.totalProjects },
+      { Metric: 'Allocated Projects', Value: panelReport.summary.allocatedProjects },
+      { Metric: 'Total Panels', Value: panelReport.summary.totalPanels },
+      { Metric: 'Average Projects per Panel', Value: panelReport.summary.averageProjectsPerPanel.toFixed(2) },
+      { Metric: 'Average Instructors per Panel', Value: panelReport.summary.averageInstructorsPerPanel.toFixed(2) },
+      { Metric: 'Constraints Satisfied', Value: panelReport.summary.totalConstraintsSatisfied },
+      { Metric: 'Constraints Violated', Value: panelReport.summary.totalConstraintsViolated },
+      { Metric: 'Warnings', Value: panelReport.summary.totalWarnings },
+      { Metric: 'Generated At', Value: panelReport.summary.generatedAt }
+    ];
+    
+    const summarySheet = XLSX.utils.json_to_sheet(summaryData);
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+
+    // Panel Overview Sheet
+    const panelOverviewData = panelReport.panels.map(panel => ({
+      'Panel Number': panel.panelNumber,
+      'Project Count': panel.projectCount,
+      'Instructor Count': panel.instructorCount,
+      'Total Duration (min)': panel.totalDuration,
+      'Project Utilization (%)': panel.utilizationMetrics.projectUtilization,
+      'Instructor Utilization (%)': panel.utilizationMetrics.instructorUtilization,
+      'Time Utilization (%)': panel.utilizationMetrics.timeUtilization,
+      'Instructors': panel.instructors.join(', ')
+    }));
+    
+    const panelOverviewSheet = XLSX.utils.json_to_sheet(panelOverviewData);
+    XLSX.utils.book_append_sheet(workbook, panelOverviewSheet, 'Panel_Overview');
+
+    // Detailed Panel Sheets
+    panelReport.panels.forEach(panel => {
+      const panelData = panel.projects.map((project, index) => ({
+        'S.No': index + 1,
+        'Project ID': project.id,
+        'Project Title': project.title,
+        'Supervisors': project.supervisors.join(', '),
+        'Panel Number': panel.panelNumber,
+        'Session Duration': panel.totalDuration,
+        'Panel Instructors': panel.instructors.join(', ')
+      }));
+      
+      if (panelData.length > 0) {
+        const panelSheet = XLSX.utils.json_to_sheet(panelData);
+        XLSX.utils.book_append_sheet(workbook, panelSheet, `Panel_${panel.panelNumber}`);
+      }
+    });
+
+    // Constraints Sheet
+    const constraintsData = [
+      ...panelReport.constraints.satisfied.map(constraint => ({
+        'Type': 'Satisfied',
+        'Status': '✅',
+        'Description': constraint
+      })),
+      ...panelReport.constraints.violated.map(constraint => ({
+        'Type': 'Violated',
+        'Status': '❌',
+        'Description': constraint
+      })),
+      ...panelReport.constraints.warnings.map(warning => ({
+        'Type': 'Warning',
+        'Status': '⚠️',
+        'Description': warning
+      }))
+    ];
+    
+    if (constraintsData.length > 0) {
+      const constraintsSheet = XLSX.utils.json_to_sheet(constraintsData);
+      XLSX.utils.book_append_sheet(workbook, constraintsSheet, 'Constraints');
+    }
+
+    // Complete Project List with Panel Assignment
+    const allProjectsData = [];
+    panelReport.panels.forEach(panel => {
+      panel.projects.forEach(project => {
+        allProjectsData.push({
+          'Project ID': project.id,
+          'Project Title': project.title,
+          'Supervisors': project.supervisors.join(', '),
+          'Assigned Panel': panel.panelNumber,
+          'Panel Instructors': panel.instructors.join(', '),
+          'Panel Duration': panel.totalDuration,
+          'Project Count in Panel': panel.projectCount
+        });
+      });
+    });
+    
+    if (allProjectsData.length > 0) {
+      const allProjectsSheet = XLSX.utils.json_to_sheet(allProjectsData);
+      XLSX.utils.book_append_sheet(workbook, allProjectsSheet, 'All_Projects');
+    }
+
+    // Suggestions Sheet
+    if (panelReport.suggestions && panelReport.suggestions.length > 0) {
+      const suggestionsData = panelReport.suggestions.map((suggestion, index) => ({
+        'S.No': index + 1,
+        'Type': suggestion.type.replace('_', ' ').toUpperCase(),
+        'Reasoning': suggestion.reasoning,
+        'Recommendation': typeof suggestion.recommendation === 'object' 
+          ? JSON.stringify(suggestion.recommendation, null, 2)
+          : suggestion.recommendation || 'See reasoning',
+        'Count': suggestion.count || 'N/A'
+      }));
+      
+      const suggestionsSheet = XLSX.utils.json_to_sheet(suggestionsData);
+      XLSX.utils.book_append_sheet(workbook, suggestionsSheet, 'Suggestions');
+    }
+
+    // Convert to blob and download
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, filename);
+
+    return true;
+  } catch (error) {
+    console.error('Failed to export panel allocation report:', error);
+    return false;
+  }
+}
+
 // Create sample Excel file for testing
 export function createSampleExcelFile() {
   const sampleData = [

@@ -7,6 +7,9 @@ import { readExcelFile, exportDomainCategorization, exportSimilarityAnalysis, ex
 import { TFIDFVectorizer, cosineSimilarity, categorizeByKeywords, generateSimilarityExplanation, getSimilarityLevel } from './utils/textProcessing';
 import { initializeGemini, isGeminiAvailable, batchCategorizeWithGemini } from './utils/geminiApi';
 
+// Components
+import PanelAllocation from './components/PanelAllocation';
+
 function App() {
   // State management
   const [currentStep, setCurrentStep] = useState(0);
@@ -21,6 +24,8 @@ function App() {
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [useGemini, setUseGemini] = useState(false);
+  const [showPanelAllocation, setShowPanelAllocation] = useState(false);
+  const [panelAllocationResult, setPanelAllocationResult] = useState(null);
 
   // Handle file upload
   const handleFileUpload = useCallback(async (file) => {
@@ -265,6 +270,16 @@ function App() {
     toast.success('Sample Excel file created and downloaded!');
   }, []);
 
+  // Handle panel allocation completion
+  const handlePanelAllocationComplete = useCallback((result) => {
+    setPanelAllocationResult(result);
+    if (result.success) {
+      toast.success('Panel allocation completed successfully!');
+    } else {
+      toast.error(`Panel allocation failed: ${result.error}`);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -444,6 +459,13 @@ function App() {
                   >
                     📋 Download Complete Report
                   </button>
+
+                  <button 
+                    onClick={() => setShowPanelAllocation(!showPanelAllocation)}
+                    className="btn btn-secondary"
+                  >
+                    🏛️ {showPanelAllocation ? 'Hide' : 'Show'} Panel Allocation
+                  </button>
                 </div>
               </div>
 
@@ -537,6 +559,15 @@ function App() {
                     )}
                   </div>
                 </div>
+              )}
+
+              {/* Panel Allocation Section */}
+              {showPanelAllocation && (
+                <PanelAllocation
+                  projects={domainResults}
+                  similarityResults={similarityResults}
+                  onAllocationComplete={handlePanelAllocationComplete}
+                />
               )}
             </div>
           )}
