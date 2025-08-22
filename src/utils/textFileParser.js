@@ -34,10 +34,8 @@ function extractProjectsForInstructor(instructorName, excelData) {
   excelData.forEach((row, index) => {
     // Get supervisor columns with case-insensitive fallback
     const supervisor = getSupervisorColumn(row, 'supervisor') || '';
-    const coSupervisor = getSupervisorColumn(row, 'co-supervisor') || '';
     
     const normalizedSupervisor = normalizeInstructorName(supervisor);
-    const normalizedCoSupervisor = normalizeInstructorName(coSupervisor);
     
     // Get project title with multiple fallbacks
     const projectTitle = getProjectTitleColumn(row) || '';
@@ -45,10 +43,9 @@ function extractProjectsForInstructor(instructorName, excelData) {
     if (index === 0) {
       console.log('Sample row columns:', Object.keys(row));
       console.log('Sample supervisor:', supervisor);
-      console.log('Sample co-supervisor:', coSupervisor);
     }
 
-    if (projectTitle && (normalizedSupervisor === normalizedInstructorName || normalizedCoSupervisor === normalizedInstructorName)) {
+    if (projectTitle && normalizedSupervisor === normalizedInstructorName) {
       projects.push(projectTitle);
       console.log(`Found project "${projectTitle}" for instructor "${instructorName}"`);
     }
@@ -73,15 +70,6 @@ function getSupervisorColumn(row, type) {
            row['supervisor'] || 
            row['SUPERVISOR'] ||
            keys.find(key => key.toLowerCase().trim() === 'supervisor') ? row[keys.find(key => key.toLowerCase().trim() === 'supervisor')] : '';
-  } else if (type === 'co-supervisor') {
-    // Look for exact match first, then case-insensitive
-    return row['Co-Supervisor'] || 
-           row['coSupervisor'] ||
-           row['co-supervisor'] || 
-           row['CO-SUPERVISOR'] ||
-           row['Co-supervisor'] ||
-           row['co_supervisor'] ||
-           keys.find(key => key.toLowerCase().replace(/[-_\s]/g, '') === 'cosupervisor') ? row[keys.find(key => key.toLowerCase().replace(/[-_\s]/g, '') === 'cosupervisor')] : '';
   }
   
   return '';
@@ -569,7 +557,7 @@ export function createSampleTextContent() {
 # Format: One instructor name per line
 # 
 # Instructions:
-# 1. Upload your FYP Excel file first (with Supervisor and Co-Supervisor columns)
+# 1. Upload your FYP Excel file first (with Supervisor columns)
 # 2. List instructor names below (one per line)
 # 3. The system will automatically extract their projects from the Excel data
 # 4. Use exact names as they appear in the Excel file
@@ -672,7 +660,6 @@ export function extractSupervisorStatistics(excelData) {
 
   excelData.forEach((row, index) => {
     const supervisor = getSupervisorColumn(row, 'supervisor') || '';
-    const coSupervisor = getSupervisorColumn(row, 'co-supervisor') || '';
     const projectTitle = getProjectTitleColumn(row) || `Project_${index + 1}`;
     const projectScope = getProjectScopeColumn(row) || '';
 
@@ -680,7 +667,6 @@ export function extractSupervisorStatistics(excelData) {
     if (index === 0) {
       console.log('Excel columns detected:', Object.keys(row));
       console.log('Supervisor found:', supervisor);
-      console.log('Co-Supervisor found:', coSupervisor);
       console.log('Project Title found:', projectTitle);
     }
 
@@ -701,29 +687,6 @@ export function extractSupervisorStatistics(excelData) {
         title: projectTitle,
         scope: projectScope,
         role: 'Primary Supervisor',
-        coSupervisor: coSupervisor || null
-      });
-      supervisorData.projectCount++;
-    }
-
-    // Process co-supervisor
-    if (coSupervisor.trim()) {
-      const normalizedName = coSupervisor.trim();
-      if (!supervisorMap.has(normalizedName)) {
-        supervisorMap.set(normalizedName, {
-          name: normalizedName,
-          projects: [],
-          projectCount: 0,
-          role: 'Co-Supervisor'
-        });
-      }
-      
-      const supervisorData = supervisorMap.get(normalizedName);
-      supervisorData.projects.push({
-        title: projectTitle,
-        scope: projectScope,
-        role: 'Co-Supervisor',
-        primarySupervisor: supervisor || null
       });
       supervisorData.projectCount++;
     }

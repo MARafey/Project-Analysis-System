@@ -24,8 +24,7 @@ export function allocateGroupsToPanels(parsedData, constraints, similarityResult
   const {
     numberOfPanels,
     instructorsPerPanel,
-    groupsPerPanel,
-    sessionDurationMinutes = 120
+    projectsPerPanel
   } = constraints;
 
   // Validate inputs
@@ -33,7 +32,7 @@ export function allocateGroupsToPanels(parsedData, constraints, similarityResult
     throw new Error('Invalid parsed data provided');
   }
 
-  if (numberOfPanels < 1 || instructorsPerPanel < 1 || groupsPerPanel < 1) {
+  if (numberOfPanels < 1 || instructorsPerPanel < 1 || projectsPerPanel < 1) {
     throw new Error('All constraints must be positive numbers');
   }
 
@@ -45,10 +44,9 @@ export function allocateGroupsToPanels(parsedData, constraints, similarityResult
     groups: [],
     instructors: new Set(),
     totalProjects: 0,
-    sessionDuration: sessionDurationMinutes,
     constraints: {
       maxInstructors: instructorsPerPanel,
-      desiredGroups: groupsPerPanel,
+      desiredProjects: projectsPerPanel,
       actualGroups: 0
     }
   }));
@@ -106,8 +104,19 @@ export function allocateGroupsToPanels(parsedData, constraints, similarityResult
         }
       });
 
+      // Log project balance after each allocation
+      const currentProjectCounts = panels.map(p => ({ 
+        panel: p.panelNumber, 
+        projects: p.totalProjects,
+        groups: p.constraints.actualGroups 
+      }));
+      const minProjects = Math.min(...currentProjectCounts.map(p => p.projects));
+      const maxProjects = Math.max(...currentProjectCounts.map(p => p.projects));
+      const projectSpread = maxProjects - minProjects;
+      
       allocationResults.successful.push(
-        `Allocated overlapping group set of ${unallocatedGroups.length} groups to Panel ${bestPanel.panelNumber}`
+        `Allocated overlapping group set of ${unallocatedGroups.length} groups to Panel ${bestPanel.panelNumber}. ` +
+        `Project balance: min=${minProjects}, max=${maxProjects}, spread=${projectSpread}`
       );
     } else {
       allocationResults.failed.push(
@@ -134,8 +143,19 @@ export function allocateGroupsToPanels(parsedData, constraints, similarityResult
       
       allocatedGroups.add(group.id);
       
+      // Log project balance after each allocation
+      const currentProjectCounts = panels.map(p => ({ 
+        panel: p.panelNumber, 
+        projects: p.totalProjects,
+        groups: p.constraints.actualGroups 
+      }));
+      const minProjects = Math.min(...currentProjectCounts.map(p => p.projects));
+      const maxProjects = Math.max(...currentProjectCounts.map(p => p.projects));
+      const projectSpread = maxProjects - minProjects;
+      
       allocationResults.successful.push(
-        `Allocated group "${group.id}" to Panel ${bestPanel.panelNumber}`
+        `Allocated group "${group.id}" (${group.projects.length} projects) to Panel ${bestPanel.panelNumber}. ` +
+        `Project balance: min=${minProjects}, max=${maxProjects}, spread=${projectSpread}`
       );
     } else {
       allocationResults.failed.push(
@@ -152,6 +172,12 @@ export function allocateGroupsToPanels(parsedData, constraints, similarityResult
 
   // Step 7: Generate warnings and constraint analysis
   analyzeConstraints(panels, constraints, allocationResults);
+
+  // Step 8: Analyze final project balance
+  analyzeProjectBalance(panels, allocationResults);
+
+  // Step 9: Analyze final instructor balance
+  analyzeInstructorBalance(panels, constraints, allocationResults);
 
   // Convert instructor sets to arrays
   const finalPanels = panels.map(panel => ({
@@ -275,10 +301,20 @@ function findBestPanelForGroupSet(panels, groupIds, instructors, constraints, al
   let bestPanel = null;
   let bestScore = -1;
 
-  // **NEW BALANCED DISTRIBUTION STRATEGY**
+  // **ENHANCED BALANCED DISTRIBUTION STRATEGY**
   // Phase 1: Find minimum capacity across all panels
   const minGroups = Math.min(...panels.map(p => p.constraints.actualGroups));
   const maxGroups = Math.max(...panels.map(p => p.constraints.actualGroups));
+  
+  // Calculate current project counts for each panel
+  const panelProjectCounts = panels.map(panel => ({
+    panelNumber: panel.panelNumber,
+    currentProjects: panel.totalProjects,
+    currentGroups: panel.constraints.actualGroups
+  }));
+  
+  const minProjects = Math.min(...panelProjectCounts.map(p => p.currentProjects));
+  const maxProjects = Math.max(...panelProjectCounts.map(p => p.currentProjects));
   
   // Prioritize panels with minimum groups first (balanced distribution)
   const availablePanels = panels.filter(panel => {
@@ -295,9 +331,27 @@ function findBestPanelForGroupSet(panels, groupIds, instructors, constraints, al
     const totalInstructors = new Set([...panel.instructors, ...instructors]);
     const instructorsAfterAllocation = totalInstructors.size;
     
+    // Calculate projects that would be added
+    const projectsToAdd = groupIds.reduce((total, groupId) => {
+      const group = allGroups.find(g => g.id === groupId);
+      return total + (group ? group.projects.length : 0);
+    }, 0);
+    
+    const projectsAfterAllocation = panel.totalProjects + projectsToAdd;
+    
     let score = 0;
     
-    // **PRIORITY 1: Balanced Distribution (Highest Priority)**
+    // **PRIORITY 1: PROJECT COUNT BALANCE (HIGHEST PRIORITY)**
+    // Ensure equal project distribution across panels
+    if (panel.totalProjects === minProjects) {
+      score += 2000; // Very high priority for panels with minimum projects
+    } else if (panel.totalProjects <= minProjects + 2) {
+      score += 1500; // High priority for panels near minimum projects
+    } else if (panel.totalProjects <= minProjects + 5) {
+      score += 1000; // Medium priority for panels moderately above minimum
+    }
+    
+    // **PRIORITY 2: GROUP COUNT BALANCE (SECOND PRIORITY)**
     // Strongly prefer panels with fewer groups to ensure even distribution
     if (panel.constraints.actualGroups === minGroups) {
       score += 1000; // Very high priority for balance
@@ -305,18 +359,36 @@ function findBestPanelForGroupSet(panels, groupIds, instructors, constraints, al
       score += 500; // Medium priority for near-minimum panels
     }
     
-    // **PRIORITY 2: Avoid Exceeding Soft Constraints**
-    if (groupsAfterAllocation <= constraints.groupsPerPanel) {
-      score += 100; // Bonus for staying within desired groups
+    // **PRIORITY 3: PROJECT COUNT BALANCE AFTER ALLOCATION**
+    // Prefer allocations that result in more balanced project distribution
+    const projectedMinProjects = Math.min(...panels.map(p => 
+      p.panelNumber === panel.panelNumber ? projectsAfterAllocation : p.totalProjects
+    ));
+    const projectedMaxProjects = Math.max(...panels.map(p => 
+      p.panelNumber === panel.panelNumber ? projectsAfterAllocation : p.totalProjects
+    ));
+    const projectedProjectSpread = projectedMaxProjects - projectedMinProjects;
+    
+    if (projectedProjectSpread <= 3) {
+      score += 800; // High bonus for very balanced distribution
+    } else if (projectedProjectSpread <= 6) {
+      score += 400; // Medium bonus for moderately balanced distribution
     } else {
-      score -= (groupsAfterAllocation - constraints.groupsPerPanel) * 50; // Heavy penalty for exceeding
+      score -= projectedProjectSpread * 100; // Penalty for creating imbalance
     }
     
-    // **PRIORITY 3: Instructor Utilization**
+    // **PRIORITY 4: Avoid Exceeding Soft Constraints (Projects per Panel)**
+    if (projectsAfterAllocation <= constraints.projectsPerPanel) {
+      score += 100; // Bonus for staying within desired projects
+    } else {
+      score -= (projectsAfterAllocation - constraints.projectsPerPanel) * 50; // Heavy penalty for exceeding
+    }
+    
+    // **PRIORITY 5: Instructor Utilization**
     const instructorUtilization = instructorsAfterAllocation / constraints.instructorsPerPanel;
     score += (1 - instructorUtilization) * 30; // Prefer panels with more instructor capacity
     
-    // **PRIORITY 4: Domain Diversity (Lower Priority)**
+    // **PRIORITY 6: Domain Diversity (Lower Priority)**
     if (allGroups.length > 0) {
       const groupsToAdd = groupIds.map(id => allGroups.find(g => g.id === id)).filter(Boolean);
       const domainDiversityScore = calculateDomainDiversityForPanel(panel, groupsToAdd);
@@ -490,35 +562,66 @@ function distributeNonSupervisorInstructors(panels, allInstructors, constraints)
 
   console.log(`Distributing ${nonSupervisorInstructors.length} non-supervisor instructors among panels`);
 
-  // Sort panels by current instructor count (ascending) to balance distribution
+  // First, fill panels that are below the instructorsPerPanel limit
+  // Sort panels by current instructor count (ascending) to prioritize filling empty panels
   const sortedPanels = [...panels].sort((a, b) => a.instructors.size - b.instructors.size);
 
-  // Distribute non-supervisor instructors round-robin style
-  nonSupervisorInstructors.forEach((instructor, index) => {
-    const targetPanel = sortedPanels[index % sortedPanels.length];
+  // Distribute non-supervisor instructors to fill panels up to instructorsPerPanel
+  nonSupervisorInstructors.forEach((instructor) => {
+    // Find the panel with the fewest instructors that still has capacity
+    const targetPanel = sortedPanels.find(panel => 
+      panel.instructors.size < constraints.instructorsPerPanel
+    );
     
-    // Check if adding this instructor would violate constraints
-    if (targetPanel.instructors.size < constraints.maxInstructorsPerPanel) {
+    if (targetPanel) {
       targetPanel.instructors.add(instructor.name);
-      console.log(`✅ Assigned panel member "${instructor.name}" to Panel ${targetPanel.panelNumber}`);
-    } else {
-      // Try to find another panel with capacity
-      const availablePanel = sortedPanels.find(panel => 
-        panel.instructors.size < constraints.maxInstructorsPerPanel
-      );
+      console.log(`✅ Assigned panel member "${instructor.name}" to Panel ${targetPanel.panelNumber} (${targetPanel.instructors.size}/${constraints.instructorsPerPanel})`);
       
-      if (availablePanel) {
-        availablePanel.instructors.add(instructor.name);
-        console.log(`✅ Assigned panel member "${instructor.name}" to Panel ${availablePanel.panelNumber}`);
+      // Re-sort panels to maintain balanced distribution
+      sortedPanels.sort((a, b) => a.instructors.size - b.instructors.size);
+    } else {
+      // All panels are at capacity, but we might still want to add instructors
+      // Find the panel with the most capacity relative to its current load
+      const bestPanel = sortedPanels.reduce((best, panel) => {
+        const currentLoad = panel.instructors.size;
+        const bestLoad = best ? best.instructors.size : Infinity;
+        return currentLoad < bestLoad ? panel : best;
+      });
+      
+      if (bestPanel) {
+        bestPanel.instructors.add(instructor.name);
+        console.log(`⚠️ Assigned panel member "${instructor.name}" to Panel ${bestPanel.panelNumber} (${bestPanel.instructors.size}/${constraints.instructorsPerPanel}) - exceeded limit`);
       } else {
-        console.warn(`⚠️ Could not assign panel member "${instructor.name}" - all panels at capacity`);
+        console.warn(`❌ Could not assign panel member "${instructor.name}" - no panels available`);
       }
     }
   });
+
+  // Log final instructor distribution
+  console.log('\n📊 Final Instructor Distribution:');
+  panels.forEach(panel => {
+    const status = panel.instructors.size >= constraints.instructorsPerPanel ? '✅' : '⚠️';
+    console.log(`${status} Panel ${panel.panelNumber}: ${panel.instructors.size}/${constraints.instructorsPerPanel} instructors`);
+  });
+  
+  // Add instructor balance analysis to allocation results
+  const instructorCounts = panels.map(p => p.instructors.size);
+  const minInstructors = Math.min(...instructorCounts);
+  const maxInstructors = Math.max(...instructorCounts);
+  const instructorSpread = maxInstructors - minInstructors;
+  
+  if (instructorSpread === 0) {
+    console.log('🎯 Perfect instructor balance achieved! All panels have the same number of instructors.');
+  } else if (instructorSpread <= 1) {
+    console.log(`✅ Good instructor balance. Panel spread: ${instructorSpread} instructors`);
+  } else {
+    console.log(`⚠️ Instructor imbalance detected. Panel spread: ${instructorSpread} instructors`);
+  }
 }
 
 /**
  * Optimize instructor assignments based on where they supervise more projects
+ * while preserving non-supervisor instructors assigned to fill panels
  */
 function optimizeInstructorAssignments(panels, allGroups) {
   const instructorPanelCounts = new Map();
@@ -551,9 +654,11 @@ function optimizeInstructorAssignments(panels, allGroups) {
     }
   });
 
-  // Update panel instructor assignments
+  // Update panel instructor assignments while preserving non-supervisor instructors
   panels.forEach(panel => {
     const newInstructors = new Set();
+    
+    // First, add all supervisors who should be in this panel
     panel.groups.forEach(group => {
       group.supervisors.forEach(supervisor => {
         const primaryPanel = instructorPrimaryPanel.get(supervisor);
@@ -562,6 +667,20 @@ function optimizeInstructorAssignments(panels, allGroups) {
         }
       });
     });
+    
+    // Then, preserve any non-supervisor instructors that were assigned to fill this panel
+    // These are instructors who are in the panel but not supervisors of any groups in this panel
+    panel.instructors.forEach(instructorName => {
+      const isSupervisorInThisPanel = panel.groups.some(group => 
+        group.supervisors.includes(instructorName)
+      );
+      
+      if (!isSupervisorInThisPanel) {
+        // This is a non-supervisor instructor assigned to fill the panel
+        newInstructors.add(instructorName);
+      }
+    });
+    
     panel.instructors = newInstructors;
   });
 }
@@ -571,17 +690,17 @@ function optimizeInstructorAssignments(panels, allGroups) {
  */
 function analyzeConstraints(panels, constraints, allocationResults) {
   panels.forEach(panel => {
-    // Check soft constraint violations
-    if (panel.constraints.actualGroups > constraints.groupsPerPanel) {
+    // Check soft constraint violations (now based on projects, not groups)
+    if (panel.totalProjects > constraints.projectsPerPanel) {
       allocationResults.constraintViolations.push(
-        `Panel ${panel.panelNumber}: Exceeded desired groups per panel (${panel.constraints.actualGroups}/${constraints.groupsPerPanel})`
+        `Panel ${panel.panelNumber}: Exceeded desired projects per panel (${panel.totalProjects}/${constraints.projectsPerPanel})`
       );
     }
 
-    // Check utilization warnings
-    if (panel.constraints.actualGroups < constraints.groupsPerPanel * 0.5) {
+    // Check utilization warnings (now based on projects, not groups)
+    if (panel.totalProjects < constraints.projectsPerPanel * 0.5) {
       allocationResults.warnings.push(
-        `Panel ${panel.panelNumber}: Under-utilized (${panel.constraints.actualGroups}/${constraints.groupsPerPanel} groups)`
+        `Panel ${panel.panelNumber}: Under-utilized (${panel.totalProjects}/${constraints.projectsPerPanel} projects)`
       );
     }
 
@@ -591,6 +710,106 @@ function analyzeConstraints(panels, constraints, allocationResults) {
       );
     }
   });
+}
+
+/**
+ * Analyze final instructor balance across panels
+ */
+function analyzeInstructorBalance(panels, constraints, allocationResults) {
+  const instructorCounts = panels.map(panel => ({
+    panelNumber: panel.panelNumber,
+    instructors: panel.instructors.size,
+    groups: panel.constraints.actualGroups
+  }));
+  
+  const minInstructors = Math.min(...instructorCounts.map(p => p.instructors));
+  const maxInstructors = Math.max(...instructorCounts.map(p => p.instructors));
+  const instructorSpread = maxInstructors - minInstructors;
+  const averageInstructors = instructorCounts.reduce((sum, p) => sum + p.instructors, 0) / instructorCounts.length;
+  
+  // Log instructor balance summary
+  allocationResults.successful.push(
+    `👥 Final Instructor Balance: min=${minInstructors}, max=${maxInstructors}, avg=${averageInstructors.toFixed(1)}, spread=${instructorSpread}`
+  );
+  
+  // Add detailed panel breakdown
+  instructorCounts.forEach(panel => {
+    const deviation = Math.abs(panel.instructors - averageInstructors);
+    if (deviation > 1) {
+      allocationResults.warnings.push(
+        `Panel ${panel.panelNumber}: ${panel.instructors} instructors (${deviation > 0 ? '+' : ''}${(panel.instructors - averageInstructors).toFixed(1)} from average)`
+      );
+    }
+  });
+  
+  // Add balance quality assessment
+  if (instructorSpread === 0) {
+    allocationResults.successful.push(
+      `🎯 Perfect instructor balance achieved! All panels have exactly ${constraints.instructorsPerPanel} instructors`
+    );
+  } else if (instructorSpread <= 1) {
+    allocationResults.successful.push(
+      `✅ Good instructor balance achieved. Panel spread: ${instructorSpread} instructors`
+    );
+  } else if (instructorSpread <= 2) {
+    allocationResults.warnings.push(
+      `⚠️ Moderate instructor imbalance. Panel spread: ${instructorSpread} instructors. Consider manual adjustments if needed.`
+    );
+  } else {
+    allocationResults.warnings.push(
+      `⚠️ Significant instructor imbalance detected. Panel spread: ${instructorSpread} instructors. Manual review recommended.`
+    );
+  }
+}
+
+/**
+ * Analyze final project balance across panels
+ */
+function analyzeProjectBalance(panels, allocationResults) {
+  const projectCounts = panels.map(panel => ({
+    panelNumber: panel.panelNumber,
+    projects: panel.totalProjects,
+    groups: panel.constraints.actualGroups
+  }));
+  
+  const minProjects = Math.min(...projectCounts.map(p => p.projects));
+  const maxProjects = Math.max(...projectCounts.map(p => p.projects));
+  const projectSpread = maxProjects - minProjects;
+  const averageProjects = projectCounts.reduce((sum, p) => sum + p.projects, 0) / projectCounts.length;
+  
+  // Log project balance summary
+  allocationResults.successful.push(
+    `📊 Final Project Balance: min=${minProjects}, max=${maxProjects}, avg=${averageProjects.toFixed(1)}, spread=${projectSpread}`
+  );
+  
+  // Add detailed panel breakdown
+  projectCounts.forEach(panel => {
+    const deviation = Math.abs(panel.projects - averageProjects);
+    if (deviation > 2) {
+      allocationResults.warnings.push(
+        `Panel ${panel.panelNumber}: ${panel.projects} projects (${deviation > 0 ? '+' : ''}${(panel.projects - averageProjects).toFixed(1)} from average)`
+      );
+    }
+  });
+  
+  // Add balance quality assessment
+  if (projectSpread <= 2) {
+    allocationResults.successful.push(
+      `🎯 Excellent project balance achieved! All panels within ${projectSpread} projects of each other`
+    );
+  } else if (projectSpread <= 5) {
+    allocationResults.successful.push(
+      `✅ Good project balance achieved. Panel spread: ${projectSpread} projects`
+    );
+  } else if (projectSpread <= 8) {
+    allocationResults.warnings.push(
+      `⚠️ Moderate project imbalance. Panel spread: ${projectSpread} projects. Consider manual adjustments if needed.`
+    );
+  } else {
+    allocationResults.warnings.push(
+      `⚠️ Significant project imbalance detected. Panel spread: ${projectSpread} projects. Manual review recommended.`
+    );
+  }
 }
 
 /**
@@ -651,15 +870,45 @@ function createAllocationSummary(panels, constraints, allocationResults) {
   const averageGroupsPerPanel = totalGroups / panels.length;
   const averageInstructorsPerPanel = panels.reduce((sum, panel) => sum + panel.instructors.length, 0) / panels.length;
 
-  const softConstraintExceeded = panels.some(panel => panel.constraints.actualGroups > constraints.groupsPerPanel);
-  const maxGroupsInAnyPanel = Math.max(...panels.map(panel => panel.constraints.actualGroups));
+  // Calculate project balance metrics
+  const totalProjects = panels.reduce((sum, panel) => sum + panel.totalProjects, 0);
+  const averageProjectsPerPanel = totalProjects / panels.length;
+  const projectCounts = panels.map(panel => panel.totalProjects);
+  const minProjectsInAnyPanel = Math.min(...projectCounts);
+  const maxProjectsInAnyPanel = Math.max(...projectCounts);
+  const projectSpread = maxProjectsInAnyPanel - minProjectsInAnyPanel;
+
+  // Calculate instructor balance metrics
+  const instructorCounts = panels.map(panel => panel.instructors.length);
+  const minInstructorsInAnyPanel = Math.min(...instructorCounts);
+  const maxInstructorsInAnyPanel = Math.max(...instructorCounts);
+  const instructorSpread = maxInstructorsInAnyPanel - minInstructorsInAnyPanel;
+
+  const softConstraintExceeded = panels.some(panel => panel.totalProjects > constraints.projectsPerPanel);
+  const maxProjectsInAnyPanelForSoftConstraint = Math.max(...panels.map(panel => panel.totalProjects));
 
   return {
     totalPanels: panels.length,
     totalGroups,
     totalInstructors,
+    totalProjects,
     averageGroupsPerPanel: Math.round(averageGroupsPerPanel * 10) / 10,
     averageInstructorsPerPanel: Math.round(averageInstructorsPerPanel * 10) / 10,
+    averageProjectsPerPanel: Math.round(averageProjectsPerPanel * 10) / 10,
+    projectBalance: {
+      minProjectsInAnyPanel,
+      maxProjectsInAnyPanel,
+      projectSpread,
+      isBalanced: projectSpread <= 5, // Consider balanced if spread ≤ 5
+      quality: projectSpread <= 2 ? 'Excellent' : projectSpread <= 5 ? 'Good' : projectSpread <= 8 ? 'Moderate' : 'Needs Review'
+    },
+    instructorBalance: {
+      minInstructorsInAnyPanel,
+      maxInstructorsInAnyPanel,
+      instructorSpread,
+      isBalanced: instructorSpread <= 1, // Consider balanced if spread ≤ 1
+      quality: instructorSpread === 0 ? 'Perfect' : instructorSpread <= 1 ? 'Good' : instructorSpread <= 2 ? 'Moderate' : 'Needs Review'
+    },
     constraints: {
       hard: {
         numberOfPanels: constraints.numberOfPanels,
@@ -667,10 +916,10 @@ function createAllocationSummary(panels, constraints, allocationResults) {
         satisfied: true // Hard constraints are always satisfied by design
       },
       soft: {
-        groupsPerPanel: constraints.groupsPerPanel,
+        projectsPerPanel: constraints.projectsPerPanel,
         exceeded: softConstraintExceeded,
-        maxGroupsInAnyPanel,
-        reason: softConstraintExceeded ? 'Necessary to accommodate all groups while respecting hard constraints' : null
+        maxProjectsInAnyPanel: maxProjectsInAnyPanelForSoftConstraint,
+        reason: softConstraintExceeded ? 'Necessary to accommodate all projects while respecting hard constraints' : null
       }
     },
     allocationSuccess: {

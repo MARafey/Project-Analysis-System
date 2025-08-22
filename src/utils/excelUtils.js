@@ -28,7 +28,6 @@ export function readExcelFile(file) {
             subCategory: row['Sub-category of the project'] || '',
             // Preserve supervisor information - CRITICAL for panel allocation
             supervisor: row['Supervisor'] || '',
-            coSupervisor: row['Co-Supervisor'] || row['Co-supervisor'] || '',
             // Preserve ALL original columns for compatibility
             ...row
           };
@@ -473,7 +472,6 @@ export function exportConstraintBasedPanelAllocation(allocationResult, filename 
         'Groups': groupsList,
         'Assigned Instructors': instructorsList,
         'Instructor Count': panel.instructors.length,
-        'Session Duration (min)': panel.sessionDuration,
         'Groups vs Target': `${panel.constraints.actualGroups}/${panel.constraints.desiredGroups}`,
         'Instructors vs Limit': `${panel.instructors.length}/${panel.constraints.maxInstructors}`
       };
@@ -614,8 +612,6 @@ export function exportSupervisorStatistics(supervisorStats, filename = 'supervis
           'Project Title': project.title,
           'Project Scope': project.scope ? project.scope.substring(0, 100) + (project.scope.length > 100 ? '...' : '') : '',
           'Supervision Role': project.role,
-          'Co-Supervisor': project.coSupervisor || '',
-          'Primary Supervisor': project.primarySupervisor || ''
         });
       });
     });

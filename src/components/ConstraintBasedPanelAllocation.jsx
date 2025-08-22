@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { readTextFile, downloadSampleTextFile, downloadInstructorListTemplate, downloadInstructorOnlyTemplate, extractSupervisorStatistics } from '../utils/textFileParser';
 import { allocateGroupsToPanels } from '../utils/constraintBasedPanelAllocation';
+import { allocateBalancedPanels } from '../utils/balancedPanelAllocation';
 import { exportConstraintBasedPanelAllocation, exportSupervisorStatistics } from '../utils/excelUtils';
 import { readExcelFile } from '../utils/excelUtils';
-import { isGeminiAvailable, generatePanelAllocationSuggestions } from '../utils/geminiApi';
+import { isGeminiAvailable, generatePanelAllocationSuggestions, generateBalancedPanelAllocationSuggestions } from '../utils/geminiApi';
 
 const ConstraintBasedPanelAllocation = ({ 
   similarityResults = null, 
@@ -17,8 +18,7 @@ const ConstraintBasedPanelAllocation = ({
   const [constraints, setConstraints] = useState({
     numberOfPanels: 3,
     instructorsPerPanel: 4,
-    groupsPerPanel: 3,
-    sessionDurationMinutes: 120
+    projectsPerPanel: 3
   });
   const [allocationResult, setAllocationResult] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -26,6 +26,7 @@ const ConstraintBasedPanelAllocation = ({
   const [showFormatHelper, setShowFormatHelper] = useState(false);
   const [geminiSuggestions, setGeminiSuggestions] = useState(null);
   const [useGeminiEnhancement, setUseGeminiEnhancement] = useState(false);
+  const [useBalancedAllocation, setUseBalancedAllocation] = useState(false);
   const [processingStep, setProcessingStep] = useState('');
   const [processingProgress, setProcessingProgress] = useState(0);
 
@@ -37,6 +38,18 @@ const ConstraintBasedPanelAllocation = ({
       setSupervisorStats(stats);
     }
   }, [passedExcelData]);
+
+  // Auto-calculate projects per panel when panels or projects change
+  useEffect(() => {
+    if (parsedData && parsedData.projects && constraints.numberOfPanels > 0) {
+      const totalProjects = parsedData.projects.length;
+      const calculatedProjectsPerPanel = Math.ceil(totalProjects / constraints.numberOfPanels);
+      setConstraints(prev => ({
+        ...prev,
+        projectsPerPanel: calculatedProjectsPerPanel
+      }));
+    }
+  }, [parsedData]);
 
   // Handle Excel file upload
   const handleExcelUpload = useCallback(async (file) => {
@@ -111,11 +124,30 @@ const ConstraintBasedPanelAllocation = ({
 
   // Handle constraint changes
   const handleConstraintChange = useCallback((field, value) => {
-    setConstraints(prev => ({
-      ...prev,
-      [field]: parseInt(value) || 0
-    }));
-  }, []);
+    if (field === 'numberOfPanels') {
+      // When number of panels changes, recalculate projects per panel
+      const newNumberOfPanels = parseInt(value) || 0;
+      setConstraints(prev => {
+        const newConstraints = {
+          ...prev,
+          numberOfPanels: newNumberOfPanels
+        };
+        
+        // Auto-calculate projects per panel if we have parsed data
+        if (parsedData && parsedData.projects && newNumberOfPanels > 0) {
+          const totalProjects = parsedData.projects.length;
+          newConstraints.projectsPerPanel = Math.ceil(totalProjects / newNumberOfPanels);
+        }
+        
+        return newConstraints;
+      });
+    } else {
+      setConstraints(prev => ({
+        ...prev,
+        [field]: parseInt(value) || 0
+      }));
+    }
+  }, [parsedData]);
 
   // Run panel allocation
   const runPanelAllocation = useCallback(async () => {
@@ -131,19 +163,29 @@ const ConstraintBasedPanelAllocation = ({
     setProcessingProgress(0);
 
     try {
+      let geminiSuggestionsData = null;
+
       // Step 1: Get Gemini suggestions if available and enabled
       if (useGeminiEnhancement && isGeminiAvailable() && excelData) {
         try {
           setProcessingStep('Getting AI-powered suggestions...');
           setProcessingProgress(20);
           
-          const suggestions = await generatePanelAllocationSuggestions(
-            excelData.slice(0, 20), // Limit to first 20 projects for API efficiency
-            constraints,
-            similarityResults || []
-          );
+          // Use balanced suggestions if balanced allocation is enabled
+          const suggestions = useBalancedAllocation
+            ? await generateBalancedPanelAllocationSuggestions(
+                excelData.slice(0, 30), // More projects for balanced allocation
+                constraints,
+                similarityResults || []
+              )
+            : await generatePanelAllocationSuggestions(
+                excelData.slice(0, 20), // Limit to first 20 projects for API efficiency
+                constraints,
+                similarityResults || []
+              );
           
           if (suggestions.success) {
+            geminiSuggestionsData = suggestions.data;
             setGeminiSuggestions(suggestions.data);
           }
           setProcessingProgress(40);
@@ -156,10 +198,17 @@ const ConstraintBasedPanelAllocation = ({
       }
 
       // Step 2: Run the main allocation algorithm
-      setProcessingStep('Allocating projects and instructors to panels...');
+      setProcessingStep(
+        useBalancedAllocation 
+          ? 'Running balanced panel allocation with domain diversity...' 
+          : 'Allocating projects and instructors to panels...'
+      );
       setProcessingProgress(60);
       
-      const result = allocateGroupsToPanels(parsedData, constraints, similarityResults);
+      const result = useBalancedAllocation
+        ? allocateBalancedPanels(parsedData, constraints, similarityResults, geminiSuggestionsData)
+        : allocateGroupsToPanels(parsedData, constraints, similarityResults);
+      
       setAllocationResult(result);
       
       setProcessingStep('Finalizing panel assignments...');
@@ -168,7 +217,11 @@ const ConstraintBasedPanelAllocation = ({
       // Small delay to show completion
       setTimeout(() => {
         setProcessingProgress(100);
-        setProcessingStep('Panel allocation completed successfully!');
+        setProcessingStep(
+          useBalancedAllocation 
+            ? 'Balanced panel allocation completed successfully!' 
+            : 'Panel allocation completed successfully!'
+        );
         setTimeout(() => {
           setIsProcessing(false);
           setProcessingStep('');
@@ -187,7 +240,7 @@ const ConstraintBasedPanelAllocation = ({
       setProcessingStep('');
       setProcessingProgress(0);
     }
-  }, [parsedData, constraints, similarityResults, useGeminiEnhancement, excelData]);
+  }, [parsedData, constraints, similarityResults, useGeminiEnhancement, useBalancedAllocation, excelData]);
 
   // Download results
   const downloadResults = useCallback(() => {
@@ -476,15 +529,6 @@ ${instructorList}`;
             <h4>Expected File Format:</h4>
             
             <div className="format-option">
-              <h5>Instructor Names Only {excelData && excelData.length > 0 ? '(✅ Excel Data Available)' : '(Upload Excel File First)'}</h5>
-              <pre className="format-example">
-{`Dr. Muhammad Asim
-Mr. Saad Salman
-Dr. Hasan Mujtaba
-Prof. Ahmed Ali
-Dr. Sarah Khan`}
-              </pre>
-                             <p>List instructor names (one per line). Projects will be automatically extracted from your Excel data.</p>
                <div className="format-requirements">
                  <strong>Requirements:</strong>
                  <ul>
@@ -494,9 +538,8 @@ Dr. Sarah Khan`}
                    <li>✅ One instructor name per line</li>
                    <li>✅ Empty lines and comments (#) are ignored</li>
                  </ul>
-                 <p><strong>🔄 Auto-Split Feature:</strong> The system automatically detects and splits instructor names on title keywords like "Dr", "Prof", "Mr", "Ms", "Mrs".</p>
-                 <p><strong>Example:</strong> <code>Dr Muhammad Asim Mr Saad Salman Prof Ahmed Ali</code> will be automatically split into 3 separate instructors.</p>
-               </div>
+                 
+                </div>
             </div>
           </div>
         </div>
@@ -627,33 +670,46 @@ Dr. Sarah Khan`}
               <div className="constraint-group">
                 <h4>🟡 Soft Constraints</h4>
                 <div className="form-group">
-                  <label className="form-label">Desired Groups per Panel</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={constraints.groupsPerPanel}
-                    onChange={(e) => handleConstraintChange('groupsPerPanel', e.target.value)}
-                    className="form-input"
-                    disabled={isProcessing}
-                  />
-                  <span className="help-text">Can be exceeded if necessary</span>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Session Duration (minutes)</label>
-                  <input
-                    type="number"
-                    min="30"
-                    max="480"
-                    value={constraints.sessionDurationMinutes}
-                    onChange={(e) => handleConstraintChange('sessionDurationMinutes', e.target.value)}
-                    className="form-input"
-                    disabled={isProcessing}
-                  />
-                  <span className="help-text">For scheduling reference</span>
+                  <label className="form-label">Calculated Projects per Panel</label>
+                  <div className="calculated-value">
+                    {parsedData && parsedData.projects ? 
+                      `${constraints.projectsPerPanel} (${parsedData.projects.length} total projects ÷ ${constraints.numberOfPanels} panels)` :
+                      'Calculating...'
+                    }
+                  </div>
+                  <span className="help-text">Automatically calculated based on total projects and panels</span>
                 </div>
               </div>
+            </div>
+
+            {/* Allocation Algorithm Options */}
+            <div className="algorithm-options-section">
+              <h4>🔧 Allocation Algorithm</h4>
+              
+              <div className="form-group">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={useBalancedAllocation}
+                    onChange={(e) => setUseBalancedAllocation(e.target.checked)}
+                    disabled={isProcessing}
+                  />
+                  <span>Use Balanced Panel Allocation with Domain Diversity</span>
+                </label>
+                <p className="help-text">
+                  🎯 <strong>Recommended:</strong> Distributes similar projects across panels, ensures domain diversity, 
+                  and assigns instructors based on project majority. Prevents clustering of similar projects.
+                </p>
+              </div>
+
+              {!useBalancedAllocation && (
+                <div className="algorithm-info">
+                  <p className="algorithm-description">
+                    📋 <strong>Standard Algorithm:</strong> Groups similar projects together in the same panel 
+                    based on supervisor overlap and similarity scores.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* AI Enhancement Options */}
@@ -671,7 +727,10 @@ Dr. Sarah Khan`}
                     <span>Use Gemini AI for enhanced panel allocation suggestions</span>
                   </label>
                   <p className="help-text">
-                    Get AI-powered recommendations for optimal panel composition with domain diversity analysis
+                    {useBalancedAllocation 
+                      ? "Get AI-powered recommendations for balanced domain distribution and optimal project distribution"
+                      : "Get AI-powered recommendations for optimal panel composition with domain diversity analysis"
+                    }
                   </p>
                 </div>
               </div>
@@ -684,6 +743,8 @@ Dr. Sarah Khan`}
                 className={`btn btn-primary ${isProcessing ? 'processing' : ''}`}
               >
                 {isProcessing ? '🔄 Allocating...' : 
+                 useBalancedAllocation && useGeminiEnhancement && isGeminiAvailable() ? '🚀 Generate AI-Enhanced Balanced Panels' :
+                 useBalancedAllocation ? '🎯 Generate Balanced Panels with Domain Diversity' :
                  useGeminiEnhancement && isGeminiAvailable() ? '🚀 Generate AI-Enhanced Panels' : 
                  '🚀 Generate Panel Allocation'}
               </button>
@@ -780,34 +841,117 @@ Prof. Ahmed Ali`}
           <div className="gemini-suggestions">
             <h3>🤖 AI Recommendations</h3>
             <div className="suggestions-content">
-              <div className="domain-analysis">
-                <h4>Domain Distribution Analysis</h4>
-                <p>{geminiSuggestions.domainBalanceAnalysis}</p>
-              </div>
-
-              {geminiSuggestions.recommendations && geminiSuggestions.recommendations.length > 0 && (
-                <div className="panel-recommendations">
-                  <h4>Recommended Panel Compositions</h4>
-                  <div className="recommendations-grid">
-                    {geminiSuggestions.recommendations.slice(0, 3).map((rec, index) => (
-                      <div key={index} className="recommendation-card">
-                        <h5>Panel {rec.panelNumber}</h5>
-                        <div className="panel-projects">
-                          <strong>Projects:</strong> {rec.suggestedProjects?.join(', ') || 'Various projects'}
-                        </div>
-                        <div className="domain-distribution">
-                          <strong>Domains:</strong>
-                          {rec.domainDistribution && Object.entries(rec.domainDistribution).map(([domain, count]) => (
-                            <span key={domain} className="domain-tag">{domain}: {count}</span>
-                          ))}
-                        </div>
-                        <div className="reasoning">
-                          <strong>Reasoning:</strong> {rec.reasoning}
-                        </div>
-                      </div>
-                    ))}
+              {/* Balanced allocation suggestions */}
+              {useBalancedAllocation && geminiSuggestions.balancedRecommendations ? (
+                <>
+                  <div className="domain-analysis">
+                    <h4>Balanced Distribution Strategy</h4>
+                    <p>{geminiSuggestions.distributionStrategy}</p>
                   </div>
-                </div>
+
+                  <div className="domain-analysis">
+                    <h4>Domain Balance Analysis</h4>
+                    <p>{geminiSuggestions.domainBalanceAnalysis}</p>
+                  </div>
+
+                  {geminiSuggestions.instructorOptimization && (
+                    <div className="instructor-optimization">
+                      <h4>Instructor Assignment Strategy</h4>
+                      <p>{geminiSuggestions.instructorOptimization}</p>
+                    </div>
+                  )}
+
+                  {geminiSuggestions.balanceMetrics && (
+                    <div className="balance-metrics">
+                      <h4>Expected Balance Metrics</h4>
+                      <div className="metrics-grid">
+                        {geminiSuggestions.balanceMetrics.projectSpread && (
+                          <div className="metric-item">
+                            <strong>Project Spread:</strong> {geminiSuggestions.balanceMetrics.projectSpread}
+                          </div>
+                        )}
+                        {geminiSuggestions.balanceMetrics.domainDiversity && (
+                          <div className="metric-item">
+                            <strong>Domain Diversity:</strong> {geminiSuggestions.balanceMetrics.domainDiversity}
+                          </div>
+                        )}
+                        {geminiSuggestions.balanceMetrics.similarityBalance && (
+                          <div className="metric-item">
+                            <strong>Similarity Balance:</strong> {geminiSuggestions.balanceMetrics.similarityBalance}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {geminiSuggestions.balancedRecommendations && geminiSuggestions.balancedRecommendations.length > 0 && (
+                    <div className="panel-recommendations">
+                      <h4>Balanced Panel Compositions</h4>
+                      <div className="recommendations-grid">
+                        {geminiSuggestions.balancedRecommendations.slice(0, 3).map((rec, index) => (
+                          <div key={index} className="recommendation-card balanced">
+                            <h5>Panel {rec.panelNumber}</h5>
+                            <div className="panel-projects">
+                              <strong>Projects:</strong> {rec.suggestedProjects?.join(', ') || 'Various projects'}
+                            </div>
+                            <div className="domain-distribution">
+                              <strong>Domains:</strong>
+                              {rec.domainDistribution && Object.entries(rec.domainDistribution).map(([domain, count]) => (
+                                <span key={domain} className="domain-tag balanced">{domain}: {count}</span>
+                              ))}
+                            </div>
+                            {rec.similarityDistribution && (
+                              <div className="similarity-distribution">
+                                <strong>Similarity Distribution:</strong> {rec.similarityDistribution}
+                              </div>
+                            )}
+                            {rec.instructorAssignment && (
+                              <div className="instructor-assignment">
+                                <strong>Instructors:</strong> {rec.instructorAssignment.join(', ')}
+                              </div>
+                            )}
+                            <div className="reasoning">
+                              <strong>Balance Reasoning:</strong> {rec.balanceReasoning || rec.reasoning}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Standard allocation suggestions */
+                <>
+                  <div className="domain-analysis">
+                    <h4>Domain Distribution Analysis</h4>
+                    <p>{geminiSuggestions.domainBalanceAnalysis}</p>
+                  </div>
+
+                  {geminiSuggestions.recommendations && geminiSuggestions.recommendations.length > 0 && (
+                    <div className="panel-recommendations">
+                      <h4>Recommended Panel Compositions</h4>
+                      <div className="recommendations-grid">
+                        {geminiSuggestions.recommendations.slice(0, 3).map((rec, index) => (
+                          <div key={index} className="recommendation-card">
+                            <h5>Panel {rec.panelNumber}</h5>
+                            <div className="panel-projects">
+                              <strong>Projects:</strong> {rec.suggestedProjects?.join(', ') || 'Various projects'}
+                            </div>
+                            <div className="domain-distribution">
+                              <strong>Domains:</strong>
+                              {rec.domainDistribution && Object.entries(rec.domainDistribution).map(([domain, count]) => (
+                                <span key={domain} className="domain-tag">{domain}: {count}</span>
+                              ))}
+                            </div>
+                            <div className="reasoning">
+                              <strong>Reasoning:</strong> {rec.reasoning}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {geminiSuggestions.potentialIssues && geminiSuggestions.potentialIssues.length > 0 && (
@@ -840,6 +984,14 @@ Prof. Ahmed Ali`}
           <div className="allocation-results">
             <div className="results-header">
               <h3>🎯 Allocation Results</h3>
+              {allocationResult.summary?.algorithm && (
+                <div className="algorithm-used">
+                  <span className="algorithm-badge">
+                    {allocationResult.summary.algorithm === 'Balanced Domain Diversity' ? '🎯' : '📋'} 
+                    {allocationResult.summary.algorithm}
+                  </span>
+                </div>
+              )}
               <button
                 onClick={downloadResults}
                 className="btn btn-primary"
@@ -862,12 +1014,88 @@ Prof. Ahmed Ali`}
                     <span className="stat-value">{allocationResult.summary.totalGroups}</span>
                   </div>
                   <div className="summary-stat">
+                    <span className="stat-label">Total Projects:</span>
+                    <span className="stat-value">{allocationResult.summary.totalProjects}</span>
+                  </div>
+                  <div className="summary-stat">
                     <span className="stat-label">Avg Groups/Panel:</span>
                     <span className="stat-value">{allocationResult.summary.averageGroupsPerPanel}</span>
                   </div>
                   <div className="summary-stat">
+                    <span className="stat-label">Avg Projects/Panel:</span>
+                    <span className="stat-value">{allocationResult.summary.averageProjectsPerPanel}</span>
+                  </div>
+                  <div className="summary-stat">
                     <span className="stat-label">Avg Instructors/Panel:</span>
                     <span className="stat-value">{allocationResult.summary.averageInstructorsPerPanel}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Project Balance Status */}
+              <div className="project-balance-section">
+                <h4>🎯 Project Balance Status</h4>
+                <div className="balance-status">
+                  <div className={`balance-indicator ${allocationResult.summary.projectBalance.isBalanced ? 'balanced' : 'imbalanced'}`}>
+                    <span className="balance-icon">
+                      {allocationResult.summary.projectBalance.isBalanced ? '✅' : '⚠️'}
+                    </span>
+                    <span className="balance-text">
+                      {allocationResult.summary.projectBalance.isBalanced ? 'Balanced' : 'Imbalanced'}
+                    </span>
+                    <span className="balance-quality">
+                      Quality: {allocationResult.summary.projectBalance.quality}
+                    </span>
+                  </div>
+                  <div className="balance-details">
+                    <div className="balance-stat">
+                      <span>Min Projects:</span>
+                      <span className="stat-value">{allocationResult.summary.projectBalance.minProjectsInAnyPanel}</span>
+                    </div>
+                    <div className="balance-stat">
+                      <span>Max Projects:</span>
+                      <span className="stat-value">{allocationResult.summary.projectBalance.maxProjectsInAnyPanel}</span>
+                    </div>
+                    <div className="balance-stat">
+                      <span>Project Spread:</span>
+                      <span className={`stat-value ${allocationResult.summary.projectBalance.projectSpread <= 2 ? 'excellent' : allocationResult.summary.projectBalance.projectSpread <= 5 ? 'good' : 'warning'}`}>
+                        {allocationResult.summary.projectBalance.projectSpread}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Instructor Balance Status */}
+              <div className="instructor-balance-section">
+                <h4>👥 Instructor Balance Status</h4>
+                <div className="balance-status">
+                  <div className={`balance-indicator ${allocationResult.summary.instructorBalance.isBalanced ? 'balanced' : 'imbalanced'}`}>
+                    <span className="balance-icon">
+                      {allocationResult.summary.instructorBalance.isBalanced ? '✅' : '⚠️'}
+                    </span>
+                    <span className="balance-text">
+                      {allocationResult.summary.instructorBalance.isBalanced ? 'Balanced' : 'Imbalanced'}
+                    </span>
+                    <span className="balance-quality">
+                      Quality: {allocationResult.summary.instructorBalance.quality}
+                    </span>
+                  </div>
+                  <div className="balance-details">
+                    <div className="balance-stat">
+                      <span>Min Instructors:</span>
+                      <span className="stat-value">{allocationResult.summary.instructorBalance.minInstructorsInAnyPanel}</span>
+                    </div>
+                    <div className="balance-stat">
+                      <span>Max Instructors:</span>
+                      <span className="stat-value">{allocationResult.summary.instructorBalance.maxInstructorsInAnyPanel}</span>
+                    </div>
+                    <div className="balance-stat">
+                      <span>Instructor Spread:</span>
+                      <span className={`stat-value ${allocationResult.summary.instructorBalance.instructorSpread === 0 ? 'excellent' : allocationResult.summary.instructorBalance.instructorSpread <= 1 ? 'good' : 'warning'}`}>
+                        {allocationResult.summary.instructorBalance.instructorSpread}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -916,19 +1144,62 @@ Prof. Ahmed Ali`}
                           {panel.instructors.length} Instructors
                         </span>
                       </div>
+                      {/* Project Balance Indicator */}
+                      <div className="panel-balance-indicator">
+                        {(() => {
+                          const avgProjects = allocationResult.summary.averageProjectsPerPanel;
+                          const deviation = panel.totalProjects - avgProjects;
+                          const absDeviation = Math.abs(deviation);
+                          
+                          if (absDeviation <= 1) {
+                            return <span className="balance-perfect">🎯 Perfect Balance</span>;
+                          } else if (absDeviation <= 2) {
+                            return <span className="balance-good">✅ Good Balance</span>;
+                          } else if (absDeviation <= 4) {
+                            return <span className="balance-moderate">⚠️ Moderate Deviation</span>;
+                          } else {
+                            return <span className="balance-poor">❌ High Deviation</span>;
+                          }
+                        })()}
+                      </div>
+
+                      {/* Instructor Balance Indicator */}
+                      <div className="panel-balance-indicator">
+                        {(() => {
+                          const targetInstructors = constraints.instructorsPerPanel;
+                          const currentInstructors = panel.instructors.length;
+                          const deviation = currentInstructors - targetInstructors;
+                          const absDeviation = Math.abs(deviation);
+                          
+                          if (absDeviation === 0) {
+                            return <span className="balance-perfect">👥 Perfect Balance</span>;
+                          } else if (absDeviation <= 1) {
+                            return <span className="balance-good">👥 Good Balance</span>;
+                          } else if (absDeviation <= 2) {
+                            return <span className="balance-moderate">👥 Moderate Deviation</span>;
+                          } else {
+                            return <span className="balance-poor">👥 High Deviation</span>;
+                          }
+                        })()}
+                      </div>
                     </div>
 
                     <div className="panel-content">
                       <div className="panel-section">
-                        <h6>Groups ({panel.constraints.actualGroups})</h6>
-                        <div className="groups-list">
+                        <h6>Projects ({panel.constraints.actualGroups} groups)</h6>
+                        <div className="projects-list">
                           {panel.groups.map(group => (
-                            <div key={group.id} className="group-item">
-                              <span className="group-id">{group.id.replace(/^(GROUP_|INDIVIDUAL_)/, '')}</span>
-                              <span className="group-projects">
-                                {group.projects.slice(0, 2).join(', ')}
-                                {group.projects.length > 2 && ` +${group.projects.length - 2} more`}
-                              </span>
+                            <div key={group.id} className="project-group">
+                              <div className="project-names">
+                                {group.projects.map((project, index) => (
+                                  <span key={index} className="project-name">
+                                    {project}
+                                  </span>
+                                ))}
+                              </div>
+                              <div className="group-info">
+                                <small className="group-id">Group: {group.id.replace(/^(GROUP_|INDIVIDUAL_)/, '')}</small>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -947,8 +1218,8 @@ Prof. Ahmed Ali`}
 
                       <div className="panel-utilization">
                         <div className="utilization-item">
-                          <span>Groups:</span>
-                          <span>{panel.constraints.actualGroups}/{constraints.groupsPerPanel}</span>
+                          <span>Projects:</span>
+                          <span>{panel.totalProjects}/{constraints.projectsPerPanel}</span>
                         </div>
                         <div className="utilization-item">
                           <span>Instructors:</span>
@@ -961,22 +1232,27 @@ Prof. Ahmed Ali`}
                         <h6>Domain Distribution:</h6>
                         <div className="domain-badges">
                           {(() => {
-                            const domains = {};
-                            panel.groups.forEach(group => {
-                              group.projects.forEach(project => {
-                                // Simple domain detection
-                                const projectLower = project.toLowerCase();
-                                let domain = 'General';
-                                if (projectLower.includes('ai') || projectLower.includes('ml') || projectLower.includes('chatbot')) domain = 'AI/ML';
-                                else if (projectLower.includes('web') || projectLower.includes('website') || projectLower.includes('platform')) domain = 'Web';
-                                else if (projectLower.includes('mobile') || projectLower.includes('app')) domain = 'Mobile';
-                                else if (projectLower.includes('iot') || projectLower.includes('smart')) domain = 'IoT';
-                                else if (projectLower.includes('security') || projectLower.includes('cyber')) domain = 'Security';
-                                else if (projectLower.includes('game') || projectLower.includes('vr') || projectLower.includes('ar')) domain = 'Gaming/VR';
-                                
-                                domains[domain] = (domains[domain] || 0) + 1;
+                            // Use domains from balanced allocation if available, otherwise detect
+                            const domains = panel.domains || {};
+                            
+                            // If no domains from algorithm, detect from projects
+                            if (Object.keys(domains).length === 0) {
+                              panel.groups.forEach(group => {
+                                group.projects.forEach(project => {
+                                  // Simple domain detection
+                                  const projectLower = project.toLowerCase();
+                                  let domain = 'General';
+                                  if (projectLower.includes('ai') || projectLower.includes('ml') || projectLower.includes('chatbot')) domain = 'AI/ML';
+                                  else if (projectLower.includes('web') || projectLower.includes('website') || projectLower.includes('platform')) domain = 'Web';
+                                  else if (projectLower.includes('mobile') || projectLower.includes('app')) domain = 'Mobile';
+                                  else if (projectLower.includes('iot') || projectLower.includes('smart')) domain = 'IoT';
+                                  else if (projectLower.includes('security') || projectLower.includes('cyber')) domain = 'Security';
+                                  else if (projectLower.includes('game') || projectLower.includes('vr') || projectLower.includes('ar')) domain = 'Gaming/VR';
+                                  
+                                  domains[domain] = (domains[domain] || 0) + 1;
+                                });
                               });
-                            });
+                            }
 
                             return Object.entries(domains).map(([domain, count]) => (
                               <span 
@@ -990,29 +1266,58 @@ Prof. Ahmed Ali`}
                           })()}
                         </div>
                         {(() => {
-                          const domains = {};
-                          panel.groups.forEach(group => {
-                            group.projects.forEach(project => {
-                              const projectLower = project.toLowerCase();
-                              let domain = 'General';
-                              if (projectLower.includes('ai') || projectLower.includes('ml') || projectLower.includes('chatbot')) domain = 'AI/ML';
-                              else if (projectLower.includes('web') || projectLower.includes('website') || projectLower.includes('platform')) domain = 'Web';
-                              else if (projectLower.includes('mobile') || projectLower.includes('app')) domain = 'Mobile';
-                              else if (projectLower.includes('iot') || projectLower.includes('smart')) domain = 'IoT';
-                              else if (projectLower.includes('security') || projectLower.includes('cyber')) domain = 'Security';
-                              else if (projectLower.includes('game') || projectLower.includes('vr') || projectLower.includes('ar')) domain = 'Gaming/VR';
-                              
-                              domains[domain] = (domains[domain] || 0) + 1;
+                          const domains = panel.domains || {};
+                          
+                          // If no domains from algorithm, detect from projects
+                          if (Object.keys(domains).length === 0) {
+                            panel.groups.forEach(group => {
+                              group.projects.forEach(project => {
+                                const projectLower = project.toLowerCase();
+                                let domain = 'General';
+                                if (projectLower.includes('ai') || projectLower.includes('ml') || projectLower.includes('chatbot')) domain = 'AI/ML';
+                                else if (projectLower.includes('web') || projectLower.includes('website') || projectLower.includes('platform')) domain = 'Web';
+                                else if (projectLower.includes('mobile') || projectLower.includes('app')) domain = 'Mobile';
+                                else if (projectLower.includes('iot') || projectLower.includes('smart')) domain = 'IoT';
+                                else if (projectLower.includes('security') || projectLower.includes('cyber')) domain = 'Security';
+                                else if (projectLower.includes('game') || projectLower.includes('vr') || projectLower.includes('ar')) domain = 'Gaming/VR';
+                                
+                                domains[domain] = (domains[domain] || 0) + 1;
+                              });
                             });
-                          });
+                          }
 
-                          const maxCount = Math.max(...Object.values(domains));
-                          if (maxCount > 4) {
-                            return (
-                              <div className="domain-warning">
-                                ⚠️ High concentration in one domain ({maxCount} projects)
-                              </div>
-                            );
+                          const domainCounts = Object.values(domains);
+                          const maxCount = domainCounts.length > 0 ? Math.max(...domainCounts) : 0;
+                          const uniqueDomains = Object.keys(domains).length;
+                          
+                          if (useBalancedAllocation) {
+                            if (uniqueDomains >= 3 && maxCount <= 4) {
+                              return (
+                                <div className="domain-success">
+                                  ✅ Excellent domain diversity ({uniqueDomains} domains, max {maxCount} per domain)
+                                </div>
+                              );
+                            } else if (uniqueDomains >= 2) {
+                              return (
+                                <div className="domain-moderate">
+                                  ⚡ Good domain diversity ({uniqueDomains} domains)
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <div className="domain-warning">
+                                  ⚠️ Limited domain diversity (only {uniqueDomains} domain{uniqueDomains !== 1 ? 's' : ''})
+                                </div>
+                              );
+                            }
+                          } else {
+                            if (maxCount > 4) {
+                              return (
+                                <div className="domain-warning">
+                                  ⚠️ High concentration in one domain ({maxCount} projects)
+                                </div>
+                              );
+                            }
                           }
                           return null;
                         })()}

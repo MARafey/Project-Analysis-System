@@ -319,8 +319,7 @@ ${JSON.stringify(projectsSummary, null, 2)}
 CONSTRAINTS:
 - Number of panels: ${constraints.numberOfPanels}
 - Max instructors per panel: ${constraints.instructorsPerPanel}
-- Desired groups per panel: ${constraints.groupsPerPanel}
-- Session duration: ${constraints.sessionDurationMinutes} minutes
+- Desired projects per panel: ${constraints.projectsPerPanel}
 
 DOMAIN DIVERSITY CONSTRAINT (SOFT):
 - Maximum 3-4 projects from the same domain per panel
@@ -377,6 +376,151 @@ Respond in JSON format:
       error: error.message
     };
   }
+}
+
+// Enhanced balanced panel allocation suggestions using Gemini
+export async function generateBalancedPanelAllocationSuggestions(projects, constraints, existingSimilarity = []) {
+  if (!model) {
+    throw new Error('Gemini AI not initialized');
+  }
+
+  const projectsSummary = projects.slice(0, 30).map(p => ({
+    id: p.projectId,
+    title: p.projectTitle,
+    domain: p.primaryDomain || detectProjectDomain(p.projectTitle),
+    supervisor: p.supervisor || 'Unknown',
+    keyPoints: p.keyPoints || p.projectScope?.substring(0, 150) + '...'
+  }));
+
+  // Create similarity clusters summary
+  const similarityClustersSummary = createSimilarityClustersSummary(existingSimilarity, projects);
+
+  const prompt = `
+You are an expert panel allocation system specializing in BALANCED PANEL ALLOCATION with DOMAIN DIVERSITY.
+
+Your task is to create balanced panels where:
+1. Projects with HIGH similarity are DISTRIBUTED across multiple panels (NOT clustered together)
+2. Each panel has DIVERSE domains (max 3-4 projects per domain)
+3. Instructors are assigned to panels where they have MAJORITY of their supervised projects
+4. Project distribution is EVEN across all panels
+
+PROJECTS (showing first 30):
+${JSON.stringify(projectsSummary, null, 2)}
+
+SIMILARITY CLUSTERS:
+${similarityClustersSummary}
+
+CONSTRAINTS:
+- Number of panels: ${constraints.numberOfPanels}
+- Max instructors per panel: ${constraints.instructorsPerPanel}
+- Target projects per panel: ${constraints.projectsPerPanel}
+
+BALANCED DISTRIBUTION STRATEGY:
+1. DISTRIBUTE similar projects across different panels (avoid clustering)
+2. Ensure each panel has 2-5 different domains
+3. Maximum 4 projects from same domain per panel
+4. Assign instructors to panels with their project majority
+5. Balance project count across all panels (±2 projects difference max)
+
+DOMAIN BALANCE PRIORITIES:
+- Avoid AI/ML-only panels or Web-only panels
+- Mix domains like: AI/ML + Healthcare + Finance, Web + IoT + Education, etc.
+- Prefer panels with complementary evaluation expertise
+
+Provide detailed balanced allocation suggestions:
+
+Respond in JSON format:
+{
+  "balancedRecommendations": [
+    {
+      "panelNumber": 1,
+      "suggestedProjects": ["F24-001", "F24-015", "F24-023"],
+      "domainDistribution": {"AI/ML": 2, "Healthcare": 1, "Finance": 1},
+      "similarityDistribution": "Low similarity clustering - good diversity",
+      "instructorAssignment": ["Dr. Smith (3 projects)", "Dr. Jones (1 project)"],
+      "balanceReasoning": "Even project distribution with diverse domains"
+    }
+  ],
+  "distributionStrategy": "How similar projects are distributed to avoid clustering",
+  "domainBalanceAnalysis": "Overall domain distribution analysis across all panels", 
+  "instructorOptimization": "How instructors are optimally assigned based on project majority",
+  "balanceMetrics": {
+    "projectSpread": "Expected difference between min/max projects per panel",
+    "domainDiversity": "Expected unique domains per panel",
+    "similarityBalance": "How well similar projects are distributed"
+  },
+  "potentialIssues": ["Issues that might arise with this allocation"],
+  "optimizationTips": ["Specific tips for better balanced allocation"]
+}
+`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    let responseText = response.text().trim();
+
+    if (responseText.includes('```json')) {
+      responseText = responseText.split('```json')[1].split('```')[0].trim();
+    } else if (responseText.includes('```')) {
+      responseText = responseText.split('```')[1].trim();
+    }
+
+    const parsedResult = JSON.parse(responseText);
+    
+    return {
+      success: true,
+      data: parsedResult
+    };
+
+  } catch (error) {
+    console.error('Gemini balanced panel allocation error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+// Helper function to detect project domain from title
+function detectProjectDomain(projectTitle) {
+  const title = projectTitle.toLowerCase();
+  
+  if (title.includes('ai') || title.includes('ml') || title.includes('chatbot') || title.includes('neural')) return 'AI/ML';
+  if (title.includes('web') || title.includes('website') || title.includes('platform') || title.includes('ecommerce')) return 'Web Development';
+  if (title.includes('mobile') || title.includes('app') || title.includes('android') || title.includes('ios')) return 'Mobile Development';
+  if (title.includes('iot') || title.includes('smart') || title.includes('sensor') || title.includes('automation')) return 'IoT';
+  if (title.includes('security') || title.includes('cyber') || title.includes('blockchain') || title.includes('encryption')) return 'Cybersecurity';
+  if (title.includes('health') || title.includes('medical') || title.includes('hospital') || title.includes('patient')) return 'Healthcare';
+  if (title.includes('education') || title.includes('learning') || title.includes('student') || title.includes('quiz')) return 'Education';
+  if (title.includes('finance') || title.includes('banking') || title.includes('payment') || title.includes('trading')) return 'Finance';
+  if (title.includes('game') || title.includes('vr') || title.includes('ar') || title.includes('3d')) return 'Gaming/VR';
+  
+  return 'General';
+}
+
+// Helper function to create similarity clusters summary for AI prompt
+function createSimilarityClustersSummary(similarityResults, projects) {
+  if (!similarityResults || similarityResults.length === 0) {
+    return 'No similarity data available';
+  }
+
+  const highSimilarityPairs = similarityResults
+    .filter(result => result.similarityScore >= 0.6)
+    .slice(0, 10)
+    .map(result => ({
+      projects: `${result.project1Id} & ${result.project2Id}`,
+      similarity: result.similarityScore.toFixed(2),
+      reason: result.explanation?.substring(0, 100) || 'High similarity detected'
+    }));
+
+  if (highSimilarityPairs.length === 0) {
+    return 'No high similarity clusters detected (all similarities < 0.6)';
+  }
+
+  return `High Similarity Pairs (to be DISTRIBUTED across panels):
+${highSimilarityPairs.map(pair => `- ${pair.projects} (${pair.similarity}): ${pair.reason}`).join('\n')}
+
+Note: These similar projects should be placed in DIFFERENT panels to avoid clustering.`;
 }
 
 // Get usage statistics (placeholder - actual implementation would depend on API)
