@@ -1,534 +1,478 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { DOMAIN_KEYWORDS } from './textProcessing';
+import {
+  generateJSON,
+  isAIAvailable,
+  initializeGemini as initProvider,
+  getActiveProviderName,
+  testConnection
+} from './modelApi';
+import {
+  DOMAIN_KEYWORDS,
+  TFIDFVectorizer,
+  cosineSimilarity,
+  getSimilarityLevel
+} from './textProcessing';
 
-let genAI = null;
-let model = null;
+// AI analysis layer. All calls route through modelApi (deployed endpoint first,
+// Gemini fallback). Function names keep the legacy "Gemini" naming so existing
+// components continue to work unchanged.
 
-// Initialize Gemini AI
+const CLASSIFY_BATCH_SIZE = 8;
+const SIMILARITY_BATCH_SIZE = 6;
+const MAX_CANDIDATE_PAIRS = 60;
+const LOCAL_PREFILTER_THRESHOLD = 0.15;
+
+// ---- Provider management (legacy API) ----
+
 export function initializeGemini(apiKey) {
-  try {
-    if (!apiKey) {
-      throw new Error('API key is required');
-    }
-    
-    genAI = new GoogleGenerativeAI(apiKey);
-    model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    
-    return true;
-  } catch (error) {
-    console.error('Failed to initialize Gemini:', error);
-    return false;
-  }
+  return initProvider(apiKey);
 }
 
-// Check if Gemini is available
+// Legacy name — now means "any AI provider is available" (deployed model or Gemini).
 export function isGeminiAvailable() {
-  return model !== null;
+  return isAIAvailable();
 }
 
-// Categorize project using Gemini AI
+export async function testGeminiConnection() {
+  return testConnection();
+}
+
+// ---- Classification ----
+
+// Classify a single project (kept for compatibility; batch path is preferred).
 export async function categorizeWithGemini(projectTitle, projectScope) {
-  if (!model) {
-    throw new Error('Gemini AI not initialized');
-  }
+  const results = await classifyBatch([{ projectId: '_single', projectTitle, projectScope }]);
+  const entry = results['_single'];
+  if (!entry) return { success: false, error: 'No classification returned' };
+  return { success: true, data: entry };
+}
 
-  const domainsList = Object.keys(DOMAIN_KEYWORDS);
-  const domainsStr = domainsList.join(', ');
+function classificationPrompt(projects) {
+  const domainsStr = Object.keys(DOMAIN_KEYWORDS).join(', ');
+  const items = projects.map(p =>
+    `ID: ${p.projectId}\nTitle: ${p.projectTitle}\nScope: ${(p.projectScope || '').slice(0, 600)}`
+  ).join('\n---\n');
 
-  const prompt = `
-  You are a domain expert.
-Analyze the following Final Year Project (FYP) and categorize it into one or more relevant technical domains.
+  return `You classify Final Year Projects into technical domains. Be precise and concise.
 
-Project Title: ${projectTitle}
-Project Description: ${projectScope}
+Allowed domains: ${domainsStr}
+If none fit, use the closest real technical domain name.
 
-Available Domains:
-${domainsStr}
+Projects:
+${items}
 
-if in case the project is not related to any of the domains, suggest the what domain it is related to as per your own knowledge.
+For EACH project return: its domains (1-3, most relevant first) with a 1-10 confidence and a one-sentence reason, plus a one-sentence summary and 2-4 key points.
 
-Instructions:
-1. Identify which domains this project belongs to (it can belong to multiple domains)
-2. For each relevant domain, provide a confidence score from 1-10
-3. Explain why the project fits into each selected domain
-4. Consider the technical requirements, methodologies, and objectives
-5. Provide a list of domains that the project is related to
-6. Provide a summary of the project
-7. Provide key points of the project
-
-Respond in JSON format:
+Respond with ONLY this JSON (no markdown, no commentary):
 {
-  "domains": [
+  "projects": [
     {
-      "name": "Domain Name",
-      "confidence": 8,
-      "reasoning": "Brief explanation why this project fits this domain"
+      "id": "<project id>",
+      "domains": [{"name": "Domain", "confidence": 8, "reasoning": "one sentence"}],
+      "primary_domain": "Domain",
+      "summary": "one sentence",
+      "keyPoints": ["point 1", "point 2"]
     }
-  ],
-  "list of domains": [
-    "Domain Name",
-    "Domain Name",
-    "Domain Name"
-  ],
-  "summary": "Brief overall categorization summary",
-  "Key points": "Key points of the project"
-}
-`;
-
-  try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let responseText = response.text().trim();
-
-    // Clean up response if it has markdown formatting
-    if (responseText.includes('```json')) {
-      responseText = responseText.split('```json')[1].split('```')[0].trim();
-    } else if (responseText.includes('```')) {
-      responseText = responseText.split('```')[1].trim();
-    }
-
-    // Parse JSON response
-    const parsedResult = JSON.parse(responseText);
-    
-    // Validate the response structure
-    if (!parsedResult.domains || !Array.isArray(parsedResult.domains)) {
-      throw new Error('Invalid response structure');
-    }
-
-    return {
-      success: true,
-      data: parsedResult
-    };
-
-  } catch (error) {
-    console.error('Gemini categorization error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
+  ]
+}`;
 }
 
-// Batch categorize multiple projects
+async function classifyBatch(projects) {
+  const parsed = await generateJSON(classificationPrompt(projects), { retries: 1 });
+  const list = parsed.projects || (Array.isArray(parsed) ? parsed : null);
+  if (!list) throw new Error('Invalid classification response structure');
+
+  const byId = {};
+  list.forEach(item => {
+    if (!item || !item.id || !Array.isArray(item.domains) || item.domains.length === 0) return;
+    byId[item.id] = {
+      domains: item.domains,
+      primary_domain: item.primary_domain || item.domains[0].name,
+      summary: item.summary || '',
+      keyPoints: Array.isArray(item.keyPoints) ? item.keyPoints.join('; ') : (item.keyPoints || ''),
+      'list of domains': item.domains.map(d => d.name)
+    };
+  });
+  return byId;
+}
+
+// Batch categorize: sends projects in chunks of CLASSIFY_BATCH_SIZE per request
+// instead of one request per project.
 export async function batchCategorizeWithGemini(projects, onProgress) {
   const results = [];
   const total = projects.length;
 
-  for (let i = 0; i < projects.length; i++) {
-    const project = projects[i];
-    
+  for (let start = 0; start < projects.length; start += CLASSIFY_BATCH_SIZE) {
+    const chunk = projects.slice(start, start + CLASSIFY_BATCH_SIZE);
+    let byId = {};
+    let chunkError = null;
+
     try {
-      // Add small delay to avoid rate limiting
-      if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-
-      const result = await categorizeWithGemini(project.projectTitle, project.projectScope);
-      
-      results.push({
-        projectId: project.projectId,
-        result: result
-      });
-
-      // Call progress callback
-      if (onProgress) {
-        onProgress(i + 1, total, project.projectId);
-      }
-
+      byId = await classifyBatch(chunk);
     } catch (error) {
-      console.error(`Failed to categorize project ${project.projectId}:`, error);
+      console.error('Batch classification failed:', error);
+      chunkError = error.message;
+    }
+
+    const chunkStart = start;
+    chunk.forEach((project, idx) => {
+      const data = byId[project.projectId] || byId[String(project.projectId)];
       results.push({
         projectId: project.projectId,
-        result: {
-          success: false,
-          error: error.message
-        }
+        result: data
+          ? { success: true, data }
+          : { success: false, error: chunkError || 'Project missing from model response' }
       });
-    }
+      if (onProgress) onProgress(chunkStart + idx + 1, total, project.projectId);
+    });
   }
 
   return results;
 }
 
-// Test Gemini API connection
-export async function testGeminiConnection() {
-  if (!model) {
-    return {
-      success: false,
-      error: 'Gemini AI not initialized'
-    };
-  }
+// ---- Similarity / collision detection ----
 
-  try {
-    const testPrompt = 'Respond with "Connection successful" if you can see this message.';
-    const result = await model.generateContent(testPrompt);
-    const response = await result.response;
-    const text = response.text();
-
-    return {
-      success: true,
-      response: text
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-}
-
-// Enhanced project similarity analysis using Gemini AI
 export async function analyzeProjectSimilarityWithGemini(project1, project2) {
-  if (!model) {
-    throw new Error('Gemini AI not initialized');
-  }
-
-  const prompt = `
-You are an expert in Final Year Project analysis. Compare these two projects and provide a detailed similarity analysis.
-
-PROJECT 1:
-Title: ${project1.projectTitle}
-Scope: ${project1.projectScope}
-Key Points: ${project1.keyPoints || 'Not available'}
-
-PROJECT 2:
-Title: ${project2.projectTitle}
-Scope: ${project2.projectScope}
-Key Points: ${project2.keyPoints || 'Not available'}
-
-Analyze the similarity between these projects considering:
-1. Technical approach and methodologies
-2. Problem domain and application area
-3. Technologies and tools used
-4. Target audience and use cases
-5. Implementation complexity
-6. Research goals and objectives
-
-Provide a detailed comparison and similarity score (0.0 to 1.0).
-
-Respond in JSON format:
-{
-  "similarityScore": 0.75,
-  "similarityLevel": "High",
-  "technicalSimilarity": 0.8,
-  "domainSimilarity": 0.7,
-  "methodologySimilarity": 0.6,
-  "overlappingAreas": ["Machine Learning", "Web Development"],
-  "keyDifferences": ["Project 1 focuses on NLP while Project 2 focuses on computer vision"],
-  "detailedAnalysis": "Comprehensive explanation of similarities and differences",
-  "recommendation": "Should these projects be in the same panel? Why or why not?"
-}
-`;
-
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let responseText = response.text().trim();
-
-    // Clean up response if it has markdown formatting
-    if (responseText.includes('```json')) {
-      responseText = responseText.split('```json')[1].split('```')[0].trim();
-    } else if (responseText.includes('```')) {
-      responseText = responseText.split('```')[1].trim();
-    }
-
-    const parsedResult = JSON.parse(responseText);
-    
-    return {
-      success: true,
-      data: parsedResult
-    };
-
+    const parsed = await analyzeSimilarityPairs([[project1, project2]]);
+    const item = parsed[0];
+    if (!item) return { success: false, error: 'No similarity result returned' };
+    return { success: true, data: item };
   } catch (error) {
-    console.error('Gemini similarity analysis error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    return { success: false, error: error.message };
   }
 }
 
-// Batch analyze project similarities with Gemini
-export async function batchAnalyzeSimilarityWithGemini(projects, onProgress) {
-  const results = [];
-  const threshold = 0.3;
-  const total = (projects.length * (projects.length - 1)) / 2;
-  let current = 0;
+function similarityPrompt(pairs) {
+  const items = pairs.map((pair, idx) => {
+    const [a, b] = pair;
+    return `PAIR ${idx}:
+A (${a.projectId}): ${a.projectTitle} — ${(a.keyPoints || a.projectScope || '').slice(0, 300)}
+B (${b.projectId}): ${b.projectTitle} — ${(b.keyPoints || b.projectScope || '').slice(0, 300)}`;
+  }).join('\n\n');
 
+  return `You detect overlap/collision between Final Year Projects. For each pair, judge how similar the two projects are in problem domain, technical approach, and deliverable. Be strict: high scores only for genuine overlap.
+
+${items}
+
+Respond with ONLY this JSON array (one entry per pair, same order):
+[
+  {
+    "pairIndex": 0,
+    "similarityScore": 0.0,
+    "overlappingAreas": ["area"],
+    "keyDifferences": ["difference"],
+    "analysis": "one or two sentences on the core overlap",
+    "recommendation": "one sentence: same panel or not, and why"
+  }
+]`;
+}
+
+async function analyzeSimilarityPairs(pairs) {
+  const parsed = await generateJSON(similarityPrompt(pairs), { retries: 1 });
+  const list = Array.isArray(parsed) ? parsed : parsed.pairs;
+  if (!Array.isArray(list)) throw new Error('Invalid similarity response structure');
+
+  return pairs.map((pair, idx) => {
+    const item = list.find(r => r && r.pairIndex === idx) || list[idx];
+    if (!item || typeof item.similarityScore !== 'number') return null;
+    return {
+      similarityScore: Math.max(0, Math.min(1, item.similarityScore)),
+      similarityLevel: getSimilarityLevel(Math.max(0, Math.min(1, item.similarityScore))),
+      overlappingAreas: item.overlappingAreas || [],
+      keyDifferences: item.keyDifferences || [],
+      detailedAnalysis: item.analysis || '',
+      recommendation: item.recommendation || ''
+    };
+  });
+}
+
+// Local TF-IDF pre-filter: only plausible collisions are sent to the AI,
+// instead of every possible pair (O(n²) API calls in the old version).
+function selectCandidatePairs(projects) {
+  const texts = projects.map(p => `${p.projectTitle} ${p.projectScope || ''}`);
+  const vectorizer = new TFIDFVectorizer({ maxFeatures: 1000, minDf: 1, maxDf: 0.95 });
+  const vectors = vectorizer.fitTransform(texts);
+
+  const candidates = [];
   for (let i = 0; i < projects.length; i++) {
     for (let j = i + 1; j < projects.length; j++) {
-      current++;
-      
-      try {
-        // Add delay to avoid rate limiting
-        if (current > 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-        const result = await analyzeProjectSimilarityWithGemini(projects[i], projects[j]);
-        
-        if (result.success && result.data.similarityScore > threshold) {
-          results.push({
-            project1Id: projects[i].projectId,
-            project2Id: projects[j].projectId,
-            similarityScore: result.data.similarityScore,
-            similarityLevel: result.data.similarityLevel,
-            overlappingDomains: result.data.overlappingAreas || [],
-            explanation: result.data.detailedAnalysis,
-            technicalSimilarity: result.data.technicalSimilarity,
-            domainSimilarity: result.data.domainSimilarity,
-            methodologySimilarity: result.data.methodologySimilarity,
-            keyDifferences: result.data.keyDifferences || [],
-            recommendation: result.data.recommendation,
-            analysisMethod: 'gemini_ai'
-          });
-        }
-
-        if (onProgress) {
-          onProgress(current, total, `${projects[i].projectId} vs ${projects[j].projectId}`);
-        }
-
-      } catch (error) {
-        console.error(`Failed to analyze similarity between ${projects[i].projectId} and ${projects[j].projectId}:`, error);
+      const localScore = cosineSimilarity(vectors[i], vectors[j]);
+      const sharedDomain =
+        Array.isArray(projects[i].domains) && Array.isArray(projects[j].domains) &&
+        projects[i].domains.some(d => projects[j].domains.includes(d));
+      if (localScore >= LOCAL_PREFILTER_THRESHOLD || (sharedDomain && localScore >= 0.08)) {
+        candidates.push({ i, j, localScore });
       }
     }
   }
-
-  return results.sort((a, b) => b.similarityScore - a.similarityScore);
+  candidates.sort((a, b) => b.localScore - a.localScore);
+  return candidates.slice(0, MAX_CANDIDATE_PAIRS);
 }
 
-// Enhanced panel allocation suggestions using Gemini
-export async function generatePanelAllocationSuggestions(projects, constraints, existingSimilarity = []) {
-  if (!model) {
-    throw new Error('Gemini AI not initialized');
+// Batch similarity: pre-filter locally, then analyze candidates in batches.
+export async function batchAnalyzeSimilarityWithGemini(projects, onProgress) {
+  const threshold = 0.3;
+  const candidates = selectCandidatePairs(projects);
+  const results = [];
+  const total = candidates.length;
+  let done = 0;
+
+  for (let start = 0; start < candidates.length; start += SIMILARITY_BATCH_SIZE) {
+    const chunk = candidates.slice(start, start + SIMILARITY_BATCH_SIZE);
+    const pairObjects = chunk.map(c => [projects[c.i], projects[c.j]]);
+
+    try {
+      const analyses = await analyzeSimilarityPairs(pairObjects);
+
+      analyses.forEach((analysis, idx) => {
+        const { i, j } = chunk[idx];
+        if (analysis && analysis.similarityScore > threshold) {
+          results.push({
+            project1Id: projects[i].projectId,
+            project2Id: projects[j].projectId,
+            similarityScore: analysis.similarityScore,
+            similarityLevel: analysis.similarityLevel,
+            overlappingDomains: analysis.overlappingAreas,
+            explanation: analysis.detailedAnalysis,
+            keyDifferences: analysis.keyDifferences,
+            recommendation: analysis.recommendation,
+            analysisMethod: 'gemini_ai'
+          });
+        }
+      });
+    } catch (error) {
+      console.error('Similarity batch failed:', error);
+    }
+
+    done += chunk.length;
+    if (onProgress) {
+      const label = chunk.map(c => `${projects[c.i].projectId} vs ${projects[c.j].projectId}`).join(', ');
+      onProgress(Math.min(done, total), total, label);
+    }
   }
 
-  const projectsSummary = projects.slice(0, 20).map(p => ({
-    id: p.projectId,
-    title: p.projectTitle,
-    domain: p.primaryDomain || 'Unknown',
-    keyPoints: p.keyPoints || p.projectScope?.substring(0, 100) + '...'
-  }));
-
-  const prompt = `
-You are an expert panel allocation system. Given these Final Year Projects and constraints, suggest optimal panel allocations.
-
-PROJECTS (showing first 20):
-${JSON.stringify(projectsSummary, null, 2)}
-
-CONSTRAINTS:
-- Number of panels: ${constraints.numberOfPanels}
-- Max instructors per panel: ${constraints.instructorsPerPanel}
-- Desired projects per panel: ${constraints.projectsPerPanel}
-
-DOMAIN DIVERSITY CONSTRAINT (SOFT):
-- Maximum 3-4 projects from the same domain per panel
-- Avoid panels with only education/web development/AI projects
-- Ensure balanced domain distribution
-
-EXISTING SIMILARITY DATA:
-${existingSimilarity.length} similar project pairs identified
-
-Provide panel allocation suggestions considering:
-1. Domain diversity within each panel
-2. Instructor expertise alignment
-3. Project similarity for grouping efficiency
-4. Evaluation balance and fairness
-
-Respond in JSON format:
-{
-  "recommendations": [
-    {
-      "panelNumber": 1,
-      "suggestedProjects": ["F24-001", "F24-005"],
-      "domainDistribution": {"AI/ML": 2, "Web Development": 1},
-      "reasoning": "Explanation for this grouping"
-    }
-  ],
-  "domainBalanceAnalysis": "Overall domain distribution analysis",
-  "potentialIssues": ["Potential issues to watch out for"],
-  "optimizationTips": ["Tips for better allocation"]
+  // Second-opinion pass: high collisions get re-judged from a skeptical angle
+  // and the two scores are averaged, reducing false positives.
+  const verified = await verifyHighCollisions(results);
+  return verified.sort((a, b) => b.similarityScore - a.similarityScore);
 }
-`;
+
+async function verifyHighCollisions(results) {
+  const suspects = results.filter(r => r.similarityScore >= 0.55);
+  if (suspects.length === 0) return results;
+
+  const items = suspects.map((r, idx) =>
+    `PAIR ${idx}: ${r.project1Id} vs ${r.project2Id} — claimed overlap: ${r.explanation || r.overlappingDomains.join(', ')}`
+  ).join('\n');
+
+  const prompt = `You are a skeptical second reviewer. For each claimed project collision below, argue whether the two projects are ACTUALLY overlapping or merely superficially similar, and give your own similarity score (0.0-1.0).
+
+${items}
+
+Respond with ONLY this JSON array (same order):
+[{"pairIndex": 0, "verifiedScore": 0.0, "verdict": "confirmed|weakened", "note": "one sentence"}]`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let responseText = response.text().trim();
+    const parsed = await generateJSON(prompt, { retries: 1 });
+    const list = Array.isArray(parsed) ? parsed : parsed.pairs;
+    if (!Array.isArray(list)) return results;
 
-    if (responseText.includes('```json')) {
-      responseText = responseText.split('```json')[1].split('```')[0].trim();
-    } else if (responseText.includes('```')) {
-      responseText = responseText.split('```')[1].trim();
-    }
-
-    const parsedResult = JSON.parse(responseText);
-    
-    return {
-      success: true,
-      data: parsedResult
-    };
-
+    suspects.forEach((r, idx) => {
+      const v = list.find(x => x && x.pairIndex === idx) || list[idx];
+      if (v && typeof v.verifiedScore === 'number') {
+        r.similarityScore = Math.max(0, Math.min(1, (r.similarityScore + v.verifiedScore) / 2));
+        r.similarityLevel = getSimilarityLevel(r.similarityScore);
+        r.verification = { verdict: v.verdict || 'confirmed', note: v.note || '' };
+      }
+    });
   } catch (error) {
-    console.error('Gemini panel allocation error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error('Collision verification pass failed (keeping first-pass scores):', error);
   }
+  return results;
 }
 
-// Enhanced balanced panel allocation suggestions using Gemini
-export async function generateBalancedPanelAllocationSuggestions(projects, constraints, existingSimilarity = []) {
-  if (!model) {
-    throw new Error('Gemini AI not initialized');
-  }
+// ---- Panel allocation suggestions ----
 
+export async function generatePanelAllocationSuggestions(projects, constraints, existingSimilarity = [], options = {}) {
   const projectsSummary = projects.slice(0, 30).map(p => ({
     id: p.projectId,
     title: p.projectTitle,
-    domain: p.primaryDomain || detectProjectDomain(p.projectTitle),
-    supervisor: p.supervisor || 'Unknown',
-    keyPoints: p.keyPoints || p.projectScope?.substring(0, 150) + '...'
+    domain: p.primaryDomain || 'Unknown'
   }));
 
-  // Create similarity clusters summary
-  const similarityClustersSummary = createSimilarityClustersSummary(existingSimilarity, projects);
+  const prompt = `You allocate Final Year Projects to evaluation panels.
 
-  const prompt = `
-You are an expert panel allocation system specializing in BALANCED PANEL ALLOCATION with DOMAIN DIVERSITY.
-
-Your task is to create balanced panels where:
-1. Projects with HIGH similarity are DISTRIBUTED across multiple panels (NOT clustered together)
-2. Each panel has DIVERSE domains (max 3-4 projects per domain)
-3. Instructors are assigned to panels where they have MAJORITY of their supervised projects
-4. Project distribution is EVEN across all panels
-
-PROJECTS (showing first 30):
-${JSON.stringify(projectsSummary, null, 2)}
-
-SIMILARITY CLUSTERS:
-${similarityClustersSummary}
+PROJECTS:
+${JSON.stringify(projectsSummary)}
 
 CONSTRAINTS:
-- Number of panels: ${constraints.numberOfPanels}
+- Panels: ${constraints.numberOfPanels}
 - Max instructors per panel: ${constraints.instructorsPerPanel}
 - Target projects per panel: ${constraints.projectsPerPanel}
+- Max 3-4 projects from the same domain per panel; keep domains diverse.
+- ${existingSimilarity.length} similar project pairs exist; spread similar projects across panels.
+${options.specialInstructions ? `\nSPECIAL CONDITIONS FROM THE USER (high priority):\n${options.specialInstructions}` : ''}
 
-BALANCED DISTRIBUTION STRATEGY:
-1. DISTRIBUTE similar projects across different panels (avoid clustering)
-2. Ensure each panel has 2-5 different domains
-3. Maximum 4 projects from same domain per panel
-4. Assign instructors to panels with their project majority
-5. Balance project count across all panels (±2 projects difference max)
+Respond with ONLY this JSON:
+{
+  "recommendations": [
+    {"panelNumber": 1, "suggestedProjects": ["ID"], "domainDistribution": {"Domain": 1}, "reasoning": "one sentence"}
+  ],
+  "domainBalanceAnalysis": "one or two sentences",
+  "potentialIssues": ["issue"],
+  "optimizationTips": ["tip"]
+}`;
 
-DOMAIN BALANCE PRIORITIES:
-- Avoid AI/ML-only panels or Web-only panels
-- Mix domains like: AI/ML + Healthcare + Finance, Web + IoT + Education, etc.
-- Prefer panels with complementary evaluation expertise
+  try {
+    const data = await generateJSON(prompt, { retries: 1 });
+    return { success: true, data };
+  } catch (error) {
+    console.error('Panel allocation suggestion error:', error);
+    return { success: false, error: error.message };
+  }
+}
 
-Provide detailed balanced allocation suggestions:
+export async function generateBalancedPanelAllocationSuggestions(projects, constraints, existingSimilarity = [], options = {}) {
+  const projectsSummary = projects.slice(0, 30).map(p => ({
+    id: p.projectId,
+    title: p.projectTitle,
+    domain: p.primaryDomain || 'Unknown',
+    supervisor: p.supervisor || 'Unknown'
+  }));
 
-Respond in JSON format:
+  const highPairs = existingSimilarity
+    .filter(r => r.similarityScore >= 0.6)
+    .slice(0, 10)
+    .map(r => `${r.project1Id} & ${r.project2Id} (${r.similarityScore.toFixed(2)})`);
+
+  const prompt = `You create BALANCED evaluation panels with domain diversity.
+
+Rules:
+1. Distribute highly similar projects across DIFFERENT panels (never cluster them).
+2. Each panel: 2-5 distinct domains, max 4 projects per domain.
+3. Assign each instructor to the panel holding the majority of their projects.
+4. Keep project counts even across panels (±2).
+
+PROJECTS:
+${JSON.stringify(projectsSummary)}
+
+HIGH-SIMILARITY PAIRS (must be split across panels):
+${highPairs.length ? highPairs.join('\n') : 'None'}
+
+CONSTRAINTS:
+- Panels: ${constraints.numberOfPanels}
+- Max instructors per panel: ${constraints.instructorsPerPanel}
+- Target projects per panel: ${constraints.projectsPerPanel}
+${options.specialInstructions ? `\nSPECIAL CONDITIONS FROM THE USER (high priority):\n${options.specialInstructions}` : ''}
+
+Respond with ONLY this JSON:
 {
   "balancedRecommendations": [
     {
       "panelNumber": 1,
-      "suggestedProjects": ["F24-001", "F24-015", "F24-023"],
-      "domainDistribution": {"AI/ML": 2, "Healthcare": 1, "Finance": 1},
-      "similarityDistribution": "Low similarity clustering - good diversity",
-      "instructorAssignment": ["Dr. Smith (3 projects)", "Dr. Jones (1 project)"],
-      "balanceReasoning": "Even project distribution with diverse domains"
+      "suggestedProjects": ["ID"],
+      "domainDistribution": {"Domain": 1},
+      "similarityDistribution": "one sentence",
+      "instructorAssignment": ["Name (n projects)"],
+      "balanceReasoning": "one sentence"
     }
   ],
-  "distributionStrategy": "How similar projects are distributed to avoid clustering",
-  "domainBalanceAnalysis": "Overall domain distribution analysis across all panels", 
-  "instructorOptimization": "How instructors are optimally assigned based on project majority",
-  "balanceMetrics": {
-    "projectSpread": "Expected difference between min/max projects per panel",
-    "domainDiversity": "Expected unique domains per panel",
-    "similarityBalance": "How well similar projects are distributed"
-  },
-  "potentialIssues": ["Issues that might arise with this allocation"],
-  "optimizationTips": ["Specific tips for better balanced allocation"]
-}
-`;
+  "distributionStrategy": "one or two sentences",
+  "domainBalanceAnalysis": "one or two sentences",
+  "instructorOptimization": "one or two sentences",
+  "balanceMetrics": {"projectSpread": "…", "domainDiversity": "…", "similarityBalance": "…"},
+  "potentialIssues": ["issue"],
+  "optimizationTips": ["tip"]
+}`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let responseText = response.text().trim();
-
-    if (responseText.includes('```json')) {
-      responseText = responseText.split('```json')[1].split('```')[0].trim();
-    } else if (responseText.includes('```')) {
-      responseText = responseText.split('```')[1].trim();
-    }
-
-    const parsedResult = JSON.parse(responseText);
-    
-    return {
-      success: true,
-      data: parsedResult
-    };
-
+    const data = await generateJSON(prompt, { retries: 1 });
+    return { success: true, data };
   } catch (error) {
-    console.error('Gemini balanced panel allocation error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error('Balanced panel allocation error:', error);
+    return { success: false, error: error.message };
   }
 }
 
-// Helper function to detect project domain from title
-function detectProjectDomain(projectTitle) {
-  const title = projectTitle.toLowerCase();
-  
-  if (title.includes('ai') || title.includes('ml') || title.includes('chatbot') || title.includes('neural')) return 'AI/ML';
-  if (title.includes('web') || title.includes('website') || title.includes('platform') || title.includes('ecommerce')) return 'Web Development';
-  if (title.includes('mobile') || title.includes('app') || title.includes('android') || title.includes('ios')) return 'Mobile Development';
-  if (title.includes('iot') || title.includes('smart') || title.includes('sensor') || title.includes('automation')) return 'IoT';
-  if (title.includes('security') || title.includes('cyber') || title.includes('blockchain') || title.includes('encryption')) return 'Cybersecurity';
-  if (title.includes('health') || title.includes('medical') || title.includes('hospital') || title.includes('patient')) return 'Healthcare';
-  if (title.includes('education') || title.includes('learning') || title.includes('student') || title.includes('quiz')) return 'Education';
-  if (title.includes('finance') || title.includes('banking') || title.includes('payment') || title.includes('trading')) return 'Finance';
-  if (title.includes('game') || title.includes('vr') || title.includes('ar') || title.includes('3d')) return 'Gaming/VR';
-  
-  return 'General';
+// Generate MULTIPLE allocation variants in one call, honoring the user's
+// special conditions. Each variant uses a different strategy so the user can
+// compare possible schedules side by side.
+export async function generatePanelVariants(projects, constraints, existingSimilarity = [], options = {}) {
+  const { specialInstructions = '', variantCount = 3 } = options;
+
+  const projectsSummary = projects.slice(0, 40).map(p => ({
+    id: p.projectId,
+    title: p.projectTitle,
+    domain: p.primaryDomain || 'Unknown',
+    supervisor: p.supervisor || 'Unknown'
+  }));
+
+  const highPairs = existingSimilarity
+    .filter(r => r.similarityScore >= 0.5)
+    .slice(0, 15)
+    .map(r => `${r.project1Id} & ${r.project2Id} (${r.similarityScore.toFixed(2)})`);
+
+  const prompt = `You create evaluation-panel schedules for Final Year Projects. Produce ${variantCount} DISTINCT allocation variants using different strategies (e.g. domain-diversity-first, supervisor-majority-first, collision-splitting-first).
+
+HARD CONSTRAINTS (must never be violated):
+- Exactly ${constraints.numberOfPanels} panels
+- Max ${constraints.instructorsPerPanel} instructors per panel
+- A supervisor must never evaluate their own project's panel unless unavoidable
+- Every project appears in exactly one panel
+
+SOFT CONSTRAINTS (satisfy as much as possible):
+- ~${constraints.projectsPerPanel} projects per panel (±2)
+- Max 4 projects from the same domain per panel
+- Highly similar (colliding) projects go to DIFFERENT panels
+
+${specialInstructions ? `SPECIAL CONDITIONS FROM THE USER (treat as high priority):\n${specialInstructions}\n` : ''}
+PROJECTS:
+${JSON.stringify(projectsSummary)}
+
+COLLIDING PAIRS (split across panels):
+${highPairs.length ? highPairs.join('\n') : 'None detected'}
+
+Respond with ONLY this JSON:
+{
+  "variants": [
+    {
+      "variantName": "short name",
+      "strategy": "one sentence",
+      "panels": [
+        {
+          "panelNumber": 1,
+          "suggestedProjects": ["ID"],
+          "domainDistribution": {"Domain": 1},
+          "instructorAssignment": ["Name"],
+          "reasoning": "one sentence"
+        }
+      ],
+      "hardConstraintStatus": "one sentence on hard-constraint compliance",
+      "softConstraintTradeoffs": ["tradeoff"],
+      "collisionHandling": "one sentence on how colliding projects were separated"
+    }
+  ],
+  "comparison": "two sentences comparing the variants and which to prefer"
+}`;
+
+  try {
+    const data = await generateJSON(prompt, { retries: 1 });
+    if (!data.variants || !Array.isArray(data.variants)) {
+      throw new Error('Model did not return variants');
+    }
+    return { success: true, data };
+  } catch (error) {
+    console.error('Panel variant generation error:', error);
+    return { success: false, error: error.message };
+  }
 }
 
-// Helper function to create similarity clusters summary for AI prompt
-function createSimilarityClustersSummary(similarityResults, projects) {
-  if (!similarityResults || similarityResults.length === 0) {
-    return 'No similarity data available';
-  }
-
-  const highSimilarityPairs = similarityResults
-    .filter(result => result.similarityScore >= 0.6)
-    .slice(0, 10)
-    .map(result => ({
-      projects: `${result.project1Id} & ${result.project2Id}`,
-      similarity: result.similarityScore.toFixed(2),
-      reason: result.explanation?.substring(0, 100) || 'High similarity detected'
-    }));
-
-  if (highSimilarityPairs.length === 0) {
-    return 'No high similarity clusters detected (all similarities < 0.6)';
-  }
-
-  return `High Similarity Pairs (to be DISTRIBUTED across panels):
-${highSimilarityPairs.map(pair => `- ${pair.projects} (${pair.similarity}): ${pair.reason}`).join('\n')}
-
-Note: These similar projects should be placed in DIFFERENT panels to avoid clustering.`;
-}
-
-// Get usage statistics (placeholder - actual implementation would depend on API)
 export function getGeminiUsageStats() {
   return {
+    provider: getActiveProviderName(),
     totalRequests: 0,
     successfulRequests: 0,
     failedRequests: 0,
     lastRequestTime: null
   };
-} 
+}

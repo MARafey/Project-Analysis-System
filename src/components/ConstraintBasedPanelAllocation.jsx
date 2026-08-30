@@ -4,7 +4,10 @@ import { allocateGroupsToPanels } from '../utils/constraintBasedPanelAllocation'
 import { allocateBalancedPanels } from '../utils/balancedPanelAllocation';
 import { exportConstraintBasedPanelAllocation, exportSupervisorStatistics } from '../utils/excelUtils';
 import { readExcelFile } from '../utils/excelUtils';
-import { isGeminiAvailable, generatePanelAllocationSuggestions, generateBalancedPanelAllocationSuggestions } from '../utils/geminiApi';
+import { isGeminiAvailable, generatePanelAllocationSuggestions, generateBalancedPanelAllocationSuggestions, generatePanelVariants } from '../utils/geminiApi';
+import { validateAllocation } from '../utils/allocationValidator';
+import { toast } from 'react-toastify';
+import ScheduleVariants, { AllocationAudit } from './ScheduleVariants';
 
 const ConstraintBasedPanelAllocation = ({ 
   similarityResults = null, 
@@ -29,6 +32,26 @@ const ConstraintBasedPanelAllocation = ({
   const [useBalancedAllocation, setUseBalancedAllocation] = useState(false);
   const [processingStep, setProcessingStep] = useState('');
   const [processingProgress, setProcessingProgress] = useState(0);
+  const [specialInstructions, setSpecialInstructions] = useState('');
+  const [variantsResult, setVariantsResult] = useState(null);
+  const [isGeneratingVariants, setIsGeneratingVariants] = useState(false);
+
+  // Projects derived from Excel data, enriched with AI-categorized domains when available.
+  // Shape required by generatePanelVariants / validateAllocation:
+  // { projectId, projectTitle, primaryDomain, supervisor }
+  const derivedProjects = React.useMemo(() => {
+    if (!excelData || excelData.length === 0) return [];
+    const domainById = {};
+    (domainResults || []).forEach(r => {
+      if (r && r.projectId) domainById[String(r.projectId)] = r.primaryDomain;
+    });
+    return excelData.map((row, index) => ({
+      projectId: row.projectId || `Project_${index + 1}`,
+      projectTitle: row.projectTitle || '',
+      primaryDomain: domainById[String(row.projectId)] || row.primaryDomain || 'Unknown',
+      supervisor: row.supervisor || ''
+    }));
+  }, [excelData, domainResults]);
 
   // Process passed Excel data automatically
   useEffect(() => {
@@ -176,12 +199,14 @@ const ConstraintBasedPanelAllocation = ({
             ? await generateBalancedPanelAllocationSuggestions(
                 excelData.slice(0, 30), // More projects for balanced allocation
                 constraints,
-                similarityResults || []
+                similarityResults || [],
+                { specialInstructions }
               )
             : await generatePanelAllocationSuggestions(
                 excelData.slice(0, 20), // Limit to first 20 projects for API efficiency
                 constraints,
-                similarityResults || []
+                similarityResults || [],
+                { specialInstructions }
               );
           
           if (suggestions.success) {
@@ -240,7 +265,58 @@ const ConstraintBasedPanelAllocation = ({
       setProcessingStep('');
       setProcessingProgress(0);
     }
-  }, [parsedData, constraints, similarityResults, useGeminiEnhancement, useBalancedAllocation, excelData]);
+  }, [parsedData, constraints, similarityResults, useGeminiEnhancement, useBalancedAllocation, excelData, specialInstructions]);
+
+  // Generate multiple AI schedule variants
+  const runGenerateVariants = useCallback(async () => {
+    if (!excelData || excelData.length === 0) {
+      toast.error('Please upload or load Excel data first');
+      return;
+    }
+    if (!isGeminiAvailable()) {
+      toast.error('AI provider is not configured. Add an API key to enable variants.');
+      return;
+    }
+
+    setIsGeneratingVariants(true);
+    setVariantsResult(null);
+
+    try {
+      const result = await generatePanelVariants(
+        derivedProjects,
+        constraints,
+        similarityResults || [],
+        { specialInstructions, variantCount: 3 }
+      );
+
+      if (result.success) {
+        setVariantsResult(result.data);
+        toast.success(`Generated ${result.data.variants.length} schedule variants`);
+      } else {
+        toast.error(`Variant generation failed: ${result.error}`);
+      }
+    } catch (err) {
+      toast.error(`Variant generation failed: ${err.message}`);
+    } finally {
+      setIsGeneratingVariants(false);
+    }
+  }, [excelData, derivedProjects, constraints, similarityResults, specialInstructions]);
+
+  // Audit of the main allocation result (validated locally, no AI call)
+  const allocationAudit = React.useMemo(() => {
+    if (!allocationResult || !allocationResult.panels) return null;
+    try {
+      const panelsForValidation = allocationResult.panels.map(panel => ({
+        panelNumber: panel.panelNumber,
+        suggestedProjects: (panel.groups || []).flatMap(group => group.projects || []),
+        instructorAssignment: panel.instructors || []
+      }));
+      return validateAllocation(panelsForValidation, constraints, similarityResults || [], derivedProjects);
+    } catch (err) {
+      console.warn('Allocation audit failed:', err);
+      return null;
+    }
+  }, [allocationResult, constraints, similarityResults, derivedProjects]);
 
   // Download results
   const downloadResults = useCallback(() => {
@@ -754,7 +830,69 @@ ${instructorList}`;
           </>
         )}
 
+        {/* Special Conditions & AI Schedule Variants */}
+        {excelData && excelData.length > 0 && (
+          <>
+            <div className="enhanced-card-header">
+              <h3 className="enhanced-card-title">📝 Special Conditions & Schedule Variants</h3>
+            </div>
+            <div className="enhanced-card-body">
+              <div className="special-conditions-section">
+                <div className="form-group">
+                  <label className="form-label" htmlFor="special-conditions-input">
+                    Special conditions / requests (optional)
+                  </label>
+                  <textarea
+                    id="special-conditions-input"
+                    className="form-input special-conditions-textarea"
+                    rows={3}
+                    value={specialInstructions}
+                    onChange={(e) => setSpecialInstructions(e.target.value)}
+                    placeholder="e.g. Dr. Khan must be in Panel 1; keep all blockchain projects apart; no panel larger than 8"
+                    disabled={isProcessing || isGeneratingVariants}
+                  />
+                  <span className="help-text">
+                    These conditions are passed to the AI when generating suggestions and schedule variants.
+                  </span>
+                </div>
 
+                <div className="allocation-actions">
+                  <button
+                    onClick={runGenerateVariants}
+                    disabled={!isGeminiAvailable() || !excelData || excelData.length === 0 || isGeneratingVariants || isProcessing}
+                    className={`btn btn-primary ${isGeneratingVariants ? 'processing' : ''}`}
+                    type="button"
+                  >
+                    {isGeneratingVariants ? '🔄 Generating Variants...' : '🧬 Generate Schedule Variants (AI)'}
+                  </button>
+                  {!isGeminiAvailable() && (
+                    <span className="help-text">AI provider not configured — variants unavailable.</span>
+                  )}
+                </div>
+
+                {isGeneratingVariants && (
+                  <div className="loading-container">
+                    <div className="loading-spinner"></div>
+                    <div className="loading-text">Generating multiple schedule variants with AI...</div>
+                    <div className="loading-subtext">This may take a moment.</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Schedule Variants Display */}
+        {variantsResult && (
+          <div className="enhanced-card-body">
+            <ScheduleVariants
+              variantsData={variantsResult}
+              constraints={constraints}
+              similarityResults={similarityResults || []}
+              projects={derivedProjects}
+            />
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (
@@ -999,6 +1137,14 @@ Prof. Ahmed Ali`}
                 📥 Download Excel Report
               </button>
             </div>
+
+            {/* Constraint & Collision Audit */}
+            {allocationAudit && (
+              <div className="allocation-audit-wrapper">
+                <h4>🔍 Constraint & Collision Audit</h4>
+                <AllocationAudit audit={allocationAudit} />
+              </div>
+            )}
 
             {/* Summary */}
             <div className="results-summary">
