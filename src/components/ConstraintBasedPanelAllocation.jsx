@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { readTextFile, downloadSampleTextFile, downloadInstructorListTemplate, downloadInstructorOnlyTemplate, extractSupervisorStatistics } from '../utils/textFileParser';
 import { allocateGroupsToPanels } from '../utils/constraintBasedPanelAllocation';
 import { allocateBalancedPanels } from '../utils/balancedPanelAllocation';
-import { exportConstraintBasedPanelAllocation, exportSupervisorStatistics } from '../utils/excelUtils';
+import { exportConstraintBasedPanelAllocation, exportSupervisorStatistics, exportPanelsWorkbook } from '../utils/excelUtils';
 import { readExcelFile } from '../utils/excelUtils';
 import { isGeminiAvailable, generatePanelAllocationSuggestions, generateBalancedPanelAllocationSuggestions, generatePanelVariants } from '../utils/geminiApi';
 import { validateAllocation } from '../utils/allocationValidator';
@@ -365,9 +365,24 @@ const ConstraintBasedPanelAllocation = ({
 
     const success = exportConstraintBasedPanelAllocation(allocationResult);
     if (success) {
-      alert('Panel allocation report downloaded successfully!');
+      toast.success('Panel allocation report downloaded');
     } else {
-      alert('Failed to download report. Please try again.');
+      toast.error('Failed to download report. Please try again.');
+    }
+  }, [allocationResult]);
+
+  // Export the generated panels as a clean Excel workbook (one sheet per panel)
+  const exportPanels = useCallback(() => {
+    if (!allocationResult || !allocationResult.panels || allocationResult.panels.length === 0) {
+      toast.error('No panels to export yet — run the allocation first');
+      return;
+    }
+
+    const success = exportPanelsWorkbook(allocationResult);
+    if (success) {
+      toast.success('Panels exported to Excel');
+    } else {
+      toast.error('Failed to export panels. Please try again.');
     }
   }, [allocationResult]);
 
@@ -875,10 +890,16 @@ Prof. Ahmed Ali`}
                 </div>
               )}
               <button
-                onClick={downloadResults}
+                onClick={exportPanels}
                 className="btn btn-primary"
               >
-                <Download size={16} aria-hidden="true" /> Download Excel report
+                <Download size={16} aria-hidden="true" /> Export panels (Excel)
+              </button>
+              <button
+                onClick={downloadResults}
+                className="btn btn-secondary"
+              >
+                <Download size={16} aria-hidden="true" /> Full report
               </button>
             </div>
 

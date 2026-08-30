@@ -837,3 +837,62 @@ export function exportScheduleVariant(variant, audit = null, filename = null) {
     return false;
   }
 }
+
+// Clean, human-readable export of the generated panels:
+// one overview sheet (one row per project) plus one formatted sheet per panel.
+export function exportPanelsWorkbook(allocationResult, filename = 'evaluation_panels.xlsx') {
+  try {
+    const { panels } = allocationResult;
+    if (!panels || panels.length === 0) return false;
+
+    const workbook = XLSX.utils.book_new();
+
+    // Overview: one row per project across all panels
+    const overviewRows = [];
+    panels.forEach(panel => {
+      (panel.groups || []).forEach(group => {
+        (group.projects || []).forEach(project => {
+          overviewRows.push({
+            'Panel': panel.panelNumber,
+            'Group': group.id,
+            'Project': project,
+            'Supervisor': group.primarySupervisor || (group.supervisors || []).join(', '),
+            'Panel Instructors': (panel.instructors || []).join(', ')
+          });
+        });
+      });
+    });
+    const overviewSheet = XLSX.utils.json_to_sheet(overviewRows);
+    overviewSheet['!cols'] = [{ wch: 7 }, { wch: 18 }, { wch: 60 }, { wch: 28 }, { wch: 50 }];
+    XLSX.utils.book_append_sheet(workbook, overviewSheet, 'All Panels');
+
+    // One sheet per panel
+    panels.forEach(panel => {
+      const rows = [
+        [`Panel ${panel.panelNumber}`],
+        ['Instructors', (panel.instructors || []).join(', ')],
+        ['Total projects', panel.totalProjects],
+        [],
+        ['#', 'Group', 'Project', 'Supervisor']
+      ];
+      let n = 0;
+      (panel.groups || []).forEach(group => {
+        (group.projects || []).forEach(project => {
+          n += 1;
+          rows.push([n, group.id, project, group.primarySupervisor || (group.supervisors || []).join(', ')]);
+        });
+      });
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      sheet['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 60 }, { wch: 28 }];
+      XLSX.utils.book_append_sheet(workbook, sheet, `Panel ${panel.panelNumber}`.slice(0, 31));
+    });
+
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, filename);
+    return true;
+  } catch (error) {
+    console.error('Failed to export panels workbook:', error);
+    return false;
+  }
+}
