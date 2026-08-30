@@ -87,20 +87,24 @@ function getSupervisorColumn(row, type) {
  */
 function getProjectTitleColumn(row) {
   const keys = Object.keys(row);
-  
-  // Try exact matches first
-  return row['Project Title'] || 
-         row['project title'] || 
+
+  // Prefer the ID readExcelFile already standardized onto every row (the
+  // short title/code) — this is the same identifier used everywhere else
+  // in the app (AI classification, collision detection, exports), so a
+  // project referenced here matches the same project referenced there.
+  if (row.projectId) return row.projectId;
+
+  // Fallback for data that wasn't routed through readExcelFile.
+  return row['Project Title'] ||
+         row['project title'] ||
          row['PROJECT TITLE'] ||
          row['Project_Title'] ||
          row['projectTitle'] ||
-         row['Short_Title'] || 
+         row['Short_Title'] ||
          row['short_title'] ||
          row['Short Title'] ||
-         row['projectId'] ||
-         // Case-insensitive search
-         keys.find(key => key.toLowerCase().includes('project') && key.toLowerCase().includes('title')) ? row[keys.find(key => key.toLowerCase().includes('project') && key.toLowerCase().includes('title'))] : 
-         keys.find(key => key.toLowerCase().includes('title')) ? row[keys.find(key => key.toLowerCase().includes('title'))] : '';
+         (keys.find(key => key.toLowerCase().includes('project') && key.toLowerCase().includes('title')) ? row[keys.find(key => key.toLowerCase().includes('project') && key.toLowerCase().includes('title'))] : null) ||
+         (keys.find(key => key.toLowerCase().includes('title')) ? row[keys.find(key => key.toLowerCase().includes('title'))] : '');
 }
 
 /**
