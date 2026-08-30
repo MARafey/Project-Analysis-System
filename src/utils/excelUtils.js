@@ -702,3 +702,63 @@ export function createSampleExcelFile() {
   const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   saveAs(blob, 'sample_fyp_data.xlsx');
 } 
+// Export an AI-generated schedule variant (from ScheduleVariants) to Excel.
+// variant: { variantName, strategy, panels: [{ panelNumber, suggestedProjects, domainDistribution, instructorAssignment, reasoning }], ... }
+// audit (optional): { valid, hardViolations, softWarnings, collisionIssues, score }
+export function exportScheduleVariant(variant, audit = null, filename = null) {
+  try {
+    const workbook = XLSX.utils.book_new();
+
+    // Overview sheet: one row per panel
+    const overview = (variant.panels || []).map(panel => ({
+      'Panel': panel.panelNumber,
+      'Projects': (panel.suggestedProjects || []).join(', '),
+      'Project Count': (panel.suggestedProjects || []).length,
+      'Instructors': (panel.instructorAssignment || []).join(', '),
+      'Domain Distribution': Object.entries(panel.domainDistribution || {})
+        .map(([d, n]) => `${d}: ${n}`).join(', '),
+      'Reasoning': panel.reasoning || ''
+    }));
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(overview), 'Panels_Overview');
+
+    // Detail sheet: one row per project
+    const detail = [];
+    (variant.panels || []).forEach(panel => {
+      (panel.suggestedProjects || []).forEach(projectId => {
+        detail.push({
+          'Panel': panel.panelNumber,
+          'Project ID': projectId,
+          'Panel Instructors': (panel.instructorAssignment || []).join(', ')
+        });
+      });
+    });
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(detail), 'Project_Assignments');
+
+    // Strategy & audit sheet
+    const meta = [
+      { 'Field': 'Variant', 'Value': variant.variantName || 'Variant' },
+      { 'Field': 'Strategy', 'Value': variant.strategy || '' },
+      { 'Field': 'Hard Constraint Status', 'Value': variant.hardConstraintStatus || '' },
+      { 'Field': 'Collision Handling', 'Value': variant.collisionHandling || '' }
+    ];
+    (variant.softConstraintTradeoffs || []).forEach((t, i) => {
+      meta.push({ 'Field': `Soft Tradeoff ${i + 1}`, 'Value': t });
+    });
+    if (audit) {
+      meta.push({ 'Field': 'Audit Score', 'Value': `${audit.score}/100` });
+      meta.push({ 'Field': 'Hard Violations', 'Value': audit.hardViolations.join(' | ') || 'None' });
+      meta.push({ 'Field': 'Soft Warnings', 'Value': audit.softWarnings.join(' | ') || 'None' });
+      meta.push({ 'Field': 'Collision Issues', 'Value': audit.collisionIssues.join(' | ') || 'None' });
+    }
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(meta), 'Strategy_And_Audit');
+
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const safeName = (variant.variantName || 'variant').replace(/[^a-z0-9_-]+/gi, '_').toLowerCase();
+    saveAs(blob, filename || `schedule_${safeName}.xlsx`);
+    return true;
+  } catch (error) {
+    console.error('Failed to export schedule variant:', error);
+    return false;
+  }
+}

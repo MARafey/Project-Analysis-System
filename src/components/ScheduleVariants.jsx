@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
+import { toast } from 'react-toastify';
 import { validateAllocation } from '../utils/allocationValidator';
+import { exportScheduleVariant } from '../utils/excelUtils';
 
 // Compact constraint & collision audit panel.
 // audit: result of validateAllocation → { valid, hardViolations, softWarnings, collisionIssues, score }
@@ -114,8 +116,24 @@ const ScheduleVariants = ({ variantsData, constraints, similarityResults = [], p
 
       <div className="variant-card">
         <div className="variant-card-header">
-          <h4>{variant.variantName || `Variant ${safeIndex + 1}`}</h4>
-          {variant.strategy && <p className="variant-strategy">{variant.strategy}</p>}
+          <div>
+            <h4>{variant.variantName || `Variant ${safeIndex + 1}`}</h4>
+            {variant.strategy && <p className="variant-strategy">{variant.strategy}</p>}
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              const ok = exportScheduleVariant(variant, audit);
+              if (ok) {
+                toast.success('Schedule variant exported to Excel');
+              } else {
+                toast.error('Failed to export schedule variant');
+              }
+            }}
+          >
+            ⬇️ Export This Schedule
+          </button>
         </div>
 
         <AllocationAudit audit={audit} />

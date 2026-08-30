@@ -14,6 +14,7 @@ import ConstraintBasedPanelAllocation from './components/ConstraintBasedPanelAll
 
 function App() {
   // State management
+  const [activeTab, setActiveTab] = useState('analysis');
   const [currentStep, setCurrentStep] = useState(0);
   const [analysisStatus, setAnalysisStatus] = useState('');
   const [error, setError] = useState(null);
@@ -28,7 +29,6 @@ function App() {
   const [useGemini, setUseGemini] = useState(() => !!getModelEndpointConfig());
   const [showPanelAllocation, setShowPanelAllocation] = useState(false);
   // Removed unused state variable panelAllocationResult
-  const [showConstraintAllocation, setShowConstraintAllocation] = useState(false);
   const [useGeminiForSimilarity, setUseGeminiForSimilarity] = useState(true);
   const [modelEndpointUrl, setModelEndpointUrl] = useState(() => getModelEndpointConfig()?.url || '');
   const [modelEndpointKey, setModelEndpointKey] = useState('');
@@ -374,6 +374,27 @@ function App() {
               </button>
             </div>
           </div>
+
+          <nav className="header-nav" role="tablist" aria-label="Main sections">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'analysis'}
+              className={`nav-tab ${activeTab === 'analysis' ? 'active' : ''}`}
+              onClick={() => setActiveTab('analysis')}
+            >
+              📊 FYP Analysis
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'panels'}
+              className={`nav-tab ${activeTab === 'panels' ? 'active' : ''}`}
+              onClick={() => setActiveTab('panels')}
+            >
+              🏛️ Panel Creation
+            </button>
+          </nav>
         </div>
       </header>
 
@@ -494,6 +515,8 @@ function App() {
             </div>
           )}
 
+          {activeTab === 'analysis' && (
+          <>
           {/* File Upload Section */}
           {!isAnalyzing && projectsData.length === 0 && (
             <div className="upload-section">
@@ -645,19 +668,10 @@ function App() {
                     🏛️ {showPanelAllocation ? 'Hide' : 'Show'} Panel Allocation
                   </button>
 
-                  <button 
-                    onClick={() => {
-                      setShowConstraintAllocation(true);
-                      // Scroll to panel creation section
-                      setTimeout(() => {
-                        const panelSection = document.querySelector('.panel-creation-section');
-                        if (panelSection) {
-                          panelSection.scrollIntoView({ behavior: 'smooth' });
-                        }
-                      }, 100);
-                    }}
+                  <button
+                    onClick={() => setActiveTab('panels')}
                     className="btn btn-primary btn-large"
-                    style={{ marginLeft: '10px', fontWeight: 'bold' }}
+                    style={{ fontWeight: 'bold' }}
                   >
                     🚀 Generate Evaluation Panels
                   </button>
@@ -783,42 +797,6 @@ function App() {
             </div>
           )}
 
-          {/* Separate Panel Creation System - Only show if no FYP analysis is loaded or analysis is complete */}
-          {(projectsData.length === 0 || (domainResults.length > 0 && !isAnalyzing)) && (
-            <div className="panel-creation-section">
-              <div className="card">
-                <div className="panel-creation-header">
-                  <h2>🏛️ Panel Creation System</h2>
-                  <p className="section-description">
-                    Create evaluation panels from instructor-project data using constraint-based allocation. 
-                    {projectsData.length === 0 ? 
-                      'You can use this independently or run FYP analysis first for similarity-based grouping.' :
-                      'FYP analysis complete - you can now create optimized panels with similarity data.'
-                    }
-                  </p>
-                </div>
-
-                <div className="panel-creation-toggle">
-                  <button 
-                    onClick={() => setShowConstraintAllocation(!showConstraintAllocation)}
-                    className="btn btn-primary btn-large"
-                  >
-                    {showConstraintAllocation ? '🔽 Hide Panel Creation' : '🔼 Start Panel Creation'}
-                  </button>
-                </div>
-
-                {showConstraintAllocation && (
-                  <ConstraintBasedPanelAllocation 
-                    similarityResults={similarityResults}
-                    hasFYPAnalysis={similarityResults && similarityResults.length > 0}
-                    excelData={projectsData}
-                    domainResults={domainResults}
-                  />
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Instructions - Only show when no data is loaded and not analyzing */}
           {projectsData.length === 0 && !isAnalyzing && (
             <div className="instructions">
@@ -904,6 +882,33 @@ function App() {
                     <p>Detailed Excel reports organized by domains and similarity levels</p>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+          </>
+          )}
+
+          {/* Panel Creation tab */}
+          {activeTab === 'panels' && (
+            <div className="panel-creation-section">
+              <div className="card">
+                <div className="panel-creation-header">
+                  <h2>🏛️ Panel Creation System</h2>
+                  <p className="section-description">
+                    Create evaluation panels from instructor-project data using constraint-based allocation.{' '}
+                    {projectsData.length === 0 ?
+                      'You can use this independently or run FYP analysis first for similarity-based grouping.' :
+                      'FYP analysis complete - you can now create optimized panels with similarity data.'
+                    }
+                  </p>
+                </div>
+
+                <ConstraintBasedPanelAllocation
+                  similarityResults={similarityResults}
+                  hasFYPAnalysis={similarityResults && similarityResults.length > 0}
+                  excelData={projectsData}
+                  domainResults={domainResults}
+                />
               </div>
             </div>
           )}

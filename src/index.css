@@ -28,9 +28,11 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1.5rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.5rem 2rem;
+  box-sizing: border-box;
 }
 
 /* Header */
@@ -45,9 +47,50 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1.5rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Header navigation tabs */
+.header-nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.nav-tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0.6rem 0.6rem 0 0;
+  padding: 0.6rem 1.2rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-tab:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.nav-tab:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.nav-tab.active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.18);
+  border-bottom-color: #ffffff;
+  font-weight: 700;
 }
 
 .header-left {
@@ -86,7 +129,17 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Main Content Area */
 .main {
-  padding: 3rem 0;
+  padding: 1.5rem 0 3rem 0;
+}
+
+/* Generic card surface (settings panel, summary card, panel creation card) */
+.card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.06);
 }
 
 /* Enhanced Card Styling */
@@ -1285,7 +1338,7 @@ h5 {
 
 .allocation-actions {
   margin-top: 2rem;
-  text-align: center;
+  text-align: left;
 }
 
 .btn {
@@ -1592,7 +1645,7 @@ h5 {
   margin-top: 1rem;
   font-size: 0.875rem;
   color: #6b7280;
-  text-align: center;
+  text-align: left;
 }
 
 /* Instructions */
@@ -1601,7 +1654,7 @@ h5 {
   border: 1px solid #e5e7eb;
   border-radius: 0.5rem;
   padding: 2rem;
-  text-align: center;
+  text-align: left;
 }
 
 .instructions h2 {
@@ -1885,7 +1938,7 @@ h5 {
 
 .panels-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(400px, 100%), 1fr));
   gap: 1.5rem;
   margin-top: 1.5rem;
 }
@@ -2888,13 +2941,11 @@ h5 {
 
 /* Panel Creation Section Styles */
 .panel-creation-section {
-  margin: 3rem 0;
-  border-top: 2px solid #e5e7eb;
-  padding-top: 2rem;
+  margin: 0 0 3rem 0;
 }
 
 .panel-creation-header {
-  text-align: center;
+  text-align: left;
   margin-bottom: 2rem;
 }
 
@@ -2918,7 +2969,7 @@ h5 {
 /* System Overview Styles */
 .systems-overview {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr));
   gap: 2rem;
   margin-bottom: 3rem;
 }
@@ -3000,7 +3051,6 @@ h5 {
 .getting-started h3 {
   color: #1f2937;
   margin-bottom: 1.5rem;
-  text-align: center;
 }
 
 /* Responsive adjustments */
@@ -3448,4 +3498,77 @@ h5 {
     border-radius: 0.5rem;
     border-bottom: 1px solid #e5e7eb;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Full-width responsive padding                                       */
+/* ------------------------------------------------------------------ */
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Pill / badge overflow protection                                    */
+/* Long labels wrap inside the pill instead of escaping it.            */
+/* ------------------------------------------------------------------ */
+.method-badge,
+.ai-badge,
+.domain-tag,
+.domain-badge,
+.stat-badge,
+.status-badge,
+.audit-score-badge,
+.variant-tab-score,
+.supervisor-chip,
+.more-supervisors,
+.instructor-tag,
+.project-name,
+.project-id,
+.group-id,
+.status-value.success,
+.status-value.warning,
+.panel-balance-indicator span {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.3;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
+/* Variant tab labels: wrap long AI-generated names inside the tab */
+.variant-tab {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  flex-wrap: wrap;
+}
+
+.variant-tab-score {
+  flex-shrink: 0;
+}
+
+/* Table cells that hold pills may wrap their content */
+.results-table th,
+.results-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+/* Variant card header: title left, export action right */
+.variant-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
