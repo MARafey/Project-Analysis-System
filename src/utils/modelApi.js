@@ -1,27 +1,46 @@
-// AI provider layer: the deployed model endpoint (Ollama at ollama.aristral.com
-// by default), configured in Settings or via REACT_APP_MODEL_* env vars.
-// All AI calls go through generateJSON(prompt).
+// AI provider layer: all calls go through the same-origin proxy (api/chat.js)
+// so the browser never calls the Ollama server directly — that avoids CORS
+// blocks (the Ollama server sends no Access-Control-Allow-Origin header) and
+// keeps the API key server-side (set OLLAMA_API_KEY etc. on the Vercel
+// project, NOT as a REACT_APP_ variable — those get baked into the public
+// bundle and would make the browser call Ollama directly again).
+//
+// REACT_APP_MODEL_API_URL / _API_KEY / a stored Settings override are only
+// honored on localhost, for local `npm start` testing where /api/chat isn't
+// served. On any deployed origin the proxy path is used unconditionally,
+// no matter what those variables are set to — this is deliberate so that
+// misconfiguring a REACT_APP_ env var in Vercel can't reintroduce CORS.
 
 const STORAGE_KEY = 'fyp_model_endpoint_config';
 
 let endpointConfig = loadEndpointConfig();
 
-function loadEndpointConfig() {
-  try {
-    const stored = typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (parsed && parsed.url) return parsed;
-    }
-  } catch (e) { /* ignore corrupt config */ }
+function isLocalDevHost() {
+  return typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+}
 
-  // Default: same-origin proxy (api/chat.js) so the browser never calls the
-  // Ollama server directly — avoids CORS blocks and keeps the API key
-  // server-side. Set REACT_APP_MODEL_API_URL to bypass the proxy (e.g. a
-  // different endpoint that already allows CORS).
+function loadEndpointConfig() {
+  if (isLocalDevHost()) {
+    try {
+      const stored = typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.url) return parsed;
+      }
+    } catch (e) { /* ignore corrupt config */ }
+
+    if (process.env.REACT_APP_MODEL_API_URL) {
+      return {
+        url: process.env.REACT_APP_MODEL_API_URL,
+        apiKey: process.env.REACT_APP_MODEL_API_KEY || '',
+        modelName: process.env.REACT_APP_MODEL_NAME || 'gemma4:cloud'
+      };
+    }
+  }
+
   return {
-    url: process.env.REACT_APP_MODEL_API_URL || '/api/chat',
-    apiKey: process.env.REACT_APP_MODEL_API_KEY || '',
+    url: '/api/chat',
+    apiKey: '',
     modelName: process.env.REACT_APP_MODEL_NAME || 'gemma4:cloud'
   };
 }
