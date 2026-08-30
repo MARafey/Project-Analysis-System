@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { Download, Link2, Users, Scale, CheckCircle2 } from 'lucide-react';
 import { allocateProjectsToPanels, formatPanelAllocationReport, validatePanelConstraints } from '../utils/panelAllocation';
 import { exportPanelAllocationReport } from '../utils/excelUtils';
 
@@ -97,7 +98,7 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
     <div className="panel-allocation-section">
       <div className="card">
         <div className="panel-allocation-header">
-          <h2>🏛️ Panel Allocation System</h2>
+          <h2>Panel allocation</h2>
           <p className="section-description">
             Automatically distribute projects into evaluation panels while ensuring overlapping projects 
             and their supervisors are grouped together.
@@ -106,7 +107,7 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
 
         {/* Configuration Section */}
         <div className="allocation-config">
-          <h3>Panel Configuration</h3>
+          <h3>Panel configuration</h3>
           
           <div className="config-grid">
             <div className="form-group">
@@ -168,7 +169,7 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
               className="btn btn-secondary btn-sm"
               onClick={() => setShowAdvanced(!showAdvanced)}
             >
-              ⚙️ {showAdvanced ? 'Hide' : 'Show'} Advanced Settings
+              {showAdvanced ? 'Hide' : 'Show'} advanced settings
             </button>
 
             {showAdvanced && (
@@ -202,7 +203,7 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
               disabled={!canRunAllocation}
               className="btn btn-primary"
             >
-              {isAllocating ? '🔄 Allocating...' : '🚀 Generate Panel Allocation'}
+              {isAllocating ? 'Allocating...' : 'Generate panel allocation'}
             </button>
 
             {hasResults && (
@@ -211,14 +212,14 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
                   onClick={downloadReport}
                   className="btn btn-secondary"
                 >
-                  📥 Download Report
+                  <Download size={16} aria-hidden="true" /> Download report
                 </button>
-                
+
                 <button
                   onClick={resetAllocation}
                   className="btn btn-secondary"
                 >
-                  🔄 Reset
+                  Reset
                 </button>
               </div>
             )}
@@ -237,7 +238,7 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
         {hasResults && (
           <div className="allocation-results">
             <div className="results-header">
-              <h3>📊 Allocation Results</h3>
+              <h3>Allocation results</h3>
               <div className="results-summary">
                 <div className="summary-stat">
                   <span className="stat-label">Total Projects:</span>
@@ -318,17 +319,17 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
             {/* Constraints and Validation */}
             {validationResult && (
               <div className="validation-results">
-                <h4>🔍 Constraint Validation</h4>
-                
+                <h4>Constraint validation</h4>
+
                 <div className="validation-status">
                   <div className={`status-indicator ${validationResult.valid ? 'success' : 'warning'}`}>
-                    {validationResult.valid ? '✅ All constraints satisfied' : '⚠️ Some constraints violated'}
+                    {validationResult.valid ? 'All constraints satisfied' : 'Some constraints violated'}
                   </div>
                 </div>
 
                 {validationResult.issues.length > 0 && (
                   <div className="constraint-issues">
-                    <h5>Issues Found:</h5>
+                    <h5>Issues found:</h5>
                     <ul className="issue-list">
                       {validationResult.issues.map((issue, idx) => (
                         <li key={idx} className="issue-item">{issue}</li>
@@ -339,7 +340,7 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
 
                 {allocationResult.allocation.constraints.satisfied.length > 0 && (
                   <div className="constraints-satisfied">
-                    <h5>✅ Satisfied Constraints:</h5>
+                    <h5>Satisfied constraints:</h5>
                     <ul className="constraint-list">
                       {allocationResult.allocation.constraints.satisfied.map((constraint, idx) => (
                         <li key={idx} className="constraint-item success">{constraint}</li>
@@ -350,7 +351,7 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
 
                 {allocationResult.allocation.constraints.warnings.length > 0 && (
                   <div className="constraints-warnings">
-                    <h5>⚠️ Warnings:</h5>
+                    <h5>Warnings:</h5>
                     <ul className="constraint-list">
                       {allocationResult.allocation.constraints.warnings.map((warning, idx) => (
                         <li key={idx} className="constraint-item warning">{warning}</li>
@@ -364,13 +365,12 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
             {/* Suggestions */}
             {allocationResult.suggestions && allocationResult.suggestions.length > 0 && (
               <div className="allocation-suggestions">
-                <h4>💡 Optimization Suggestions</h4>
+                <h4>Suggestions</h4>
                 <div className="suggestions-list">
                   {allocationResult.suggestions.map((suggestion, idx) => (
                     <div key={idx} className="suggestion-item">
                       <div className="suggestion-type">
-                        {suggestion.type === 'optimal_configuration' ? '🎯' : '⚠️'} 
-                        {suggestion.type.replace('_', ' ').toUpperCase()}
+                        {suggestion.type.replace('_', ' ')}
                       </div>
                       <div className="suggestion-content">
                         <p className="suggestion-reasoning">{suggestion.reasoning}</p>
@@ -381,9 +381,9 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
                                 <strong>Suggested Configuration:</strong>
                                 <ul>
                                   <li>Panels: {suggestion.recommendation.numberOfPanels}</li>
-                                  <li>Projects per Panel: {suggestion.recommendation.projectsPerPanel}</li>
-                                  <li>Instructors per Panel: {suggestion.recommendation.instructorsPerPanel}</li>
-                                  <li>Session Duration: {suggestion.recommendation.sessionDurationMinutes} minutes</li>
+                                  <li>Projects per panel: {suggestion.recommendation.projectsPerPanel}</li>
+                                  <li>Instructors per panel: {suggestion.recommendation.instructorsPerPanel}</li>
+                                  <li>Session duration: {suggestion.recommendation.sessionDurationMinutes} minutes</li>
                                 </ul>
                               </div>
                             ) : (
@@ -404,7 +404,7 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
         {allocationResult && !allocationResult.success && (
           <div className="allocation-error">
             <div className="error-message">
-              <h4>❌ Allocation Failed</h4>
+              <h4>Allocation failed</h4>
               <p>{allocationResult.error}</p>
             </div>
           </div>
@@ -413,26 +413,26 @@ const PanelAllocation = ({ projects, similarityResults, onAllocationComplete }) 
         {/* Information Panel */}
         {!hasResults && !isAllocating && (
           <div className="allocation-info">
-            <h4>How Panel Allocation Works</h4>
+            <h4>How panel allocation works</h4>
             <div className="info-grid">
               <div className="info-item">
-                <div className="info-icon">🔗</div>
-                <h5>Overlap Detection</h5>
+                <div className="info-icon"><Link2 size={18} aria-hidden="true" /></div>
+                <h5>Overlap detection</h5>
                 <p>Projects with similarity above the threshold are grouped together to ensure similar work is evaluated by the same panel.</p>
               </div>
               <div className="info-item">
-                <div className="info-icon">👥</div>
-                <h5>Supervisor Grouping</h5>
+                <div className="info-icon"><Users size={18} aria-hidden="true" /></div>
+                <h5>Supervisor grouping</h5>
                 <p>Supervisors of overlapping projects are automatically assigned to the same panel to maintain consistency.</p>
               </div>
               <div className="info-item">
-                <div className="info-icon">⚖️</div>
-                <h5>Load Balancing</h5>
+                <div className="info-icon"><Scale size={18} aria-hidden="true" /></div>
+                <h5>Load balancing</h5>
                 <p>Projects are distributed evenly across panels to avoid overloading any single evaluation committee.</p>
               </div>
               <div className="info-item">
-                <div className="info-icon">✅</div>
-                <h5>Constraint Validation</h5>
+                <div className="info-icon"><CheckCircle2 size={18} aria-hidden="true" /></div>
+                <h5>Constraint validation</h5>
                 <p>The system ensures all panels meet the specified requirements for projects, instructors, and duration.</p>
               </div>
             </div>

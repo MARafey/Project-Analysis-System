@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
+import { Check, Download } from 'lucide-react';
 import { validateAllocation } from '../utils/allocationValidator';
 import { exportScheduleVariant } from '../utils/excelUtils';
 
@@ -15,13 +16,13 @@ export const AllocationAudit = ({ audit }) => {
       <div className="audit-header">
         <span className={`audit-score-badge ${scoreClass}`}>Score: {audit.score}/100</span>
         {audit.valid && (
-          <span className="audit-valid-text">✅ All hard constraints satisfied</span>
+          <span className="audit-valid-text"><Check size={16} aria-hidden="true" /> All hard constraints satisfied</span>
         )}
       </div>
 
       {audit.hardViolations.length > 0 && (
         <details className="audit-section audit-hard" open>
-          <summary>❌ Hard restriction violations ({audit.hardViolations.length})</summary>
+          <summary>Hard restriction violations ({audit.hardViolations.length})</summary>
           <ul>
             {audit.hardViolations.map((v, i) => (
               <li key={i}>{v}</li>
@@ -32,7 +33,7 @@ export const AllocationAudit = ({ audit }) => {
 
       {audit.softWarnings.length > 0 && (
         <details className="audit-section audit-soft">
-          <summary>⚠️ Soft restriction warnings ({audit.softWarnings.length})</summary>
+          <summary>Soft restriction warnings ({audit.softWarnings.length})</summary>
           <ul>
             {audit.softWarnings.map((w, i) => (
               <li key={i}>{w}</li>
@@ -43,7 +44,7 @@ export const AllocationAudit = ({ audit }) => {
 
       {audit.collisionIssues.length > 0 && (
         <details className="audit-section audit-collision">
-          <summary>💥 Collision issues ({audit.collisionIssues.length})</summary>
+          <summary>Collision issues ({audit.collisionIssues.length})</summary>
           <ul>
             {audit.collisionIssues.map((c, i) => (
               <li key={i}>{c}</li>
@@ -86,7 +87,7 @@ const ScheduleVariants = ({ variantsData, constraints, similarityResults = [], p
 
   return (
     <div className="schedule-variants">
-      <h3>🧬 AI Schedule Variants</h3>
+      <h3>Schedule variants</h3>
 
       <div className="variant-tabs">
         {variants.map((v, index) => (
@@ -132,7 +133,7 @@ const ScheduleVariants = ({ variantsData, constraints, similarityResults = [], p
               }
             }}
           >
-            ⬇️ Export This Schedule
+            <Download size={16} aria-hidden="true" /> Export this schedule
           </button>
         </div>
 
@@ -202,7 +203,7 @@ const ScheduleVariants = ({ variantsData, constraints, similarityResults = [], p
 
       {variantsData.comparison && (
         <div className="variant-comparison">
-          <h4>📊 Variant Comparison</h4>
+          <h4>Variant comparison</h4>
           <p>{variantsData.comparison}</p>
         </div>
       )}

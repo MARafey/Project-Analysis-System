@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { GraduationCap, Upload, Download, BarChart3, Users, Search, Layers, FileSpreadsheet } from 'lucide-react';
 
 // Utils
 import { readExcelFile, exportDomainCategorization, exportSimilarityAnalysis, exportCombinedReports } from './utils/excelUtils';
@@ -280,21 +281,21 @@ function App() {
   // Removed unused handlePanelAllocationComplete function
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app">
       {/* Header */}
       <header className="header">
         <div className="container">
           <div className="header-content">
             <div className="header-left">
               <div className="logo">
-                <span className="logo-icon">🎓</span>
+                <GraduationCap size={20} aria-hidden="true" />
               </div>
               <div>
                 <h1 className="header-title">FYP Analysis System</h1>
                 <p className="header-subtitle">Analyze and categorize Final Year Projects</p>
               </div>
             </div>
-            
+
           </div>
 
           <nav className="header-nav" role="tablist" aria-label="Main sections">
@@ -305,7 +306,7 @@ function App() {
               className={`nav-tab ${activeTab === 'analysis' ? 'active' : ''}`}
               onClick={() => setActiveTab('analysis')}
             >
-              📊 FYP Analysis
+              Project analysis
             </button>
             <button
               type="button"
@@ -314,7 +315,7 @@ function App() {
               className={`nav-tab ${activeTab === 'panels' ? 'active' : ''}`}
               onClick={() => setActiveTab('panels')}
             >
-              🏛️ Panel Creation
+              Panel creation
             </button>
           </nav>
         </div>
@@ -328,8 +329,10 @@ function App() {
           {!isAnalyzing && projectsData.length === 0 && (
             <div className="upload-section">
               <div className="upload-area">
-                <div className="upload-icon">📁</div>
-                <h3>Upload FYP Data File</h3>
+                <div className="upload-icon">
+                  <Upload size={24} aria-hidden="true" />
+                </div>
+                <h3>Upload project data</h3>
                 <p>Drag and drop your Excel file here, or click to select</p>
                 <input
                   type="file"
@@ -340,7 +343,7 @@ function App() {
               </div>
               {error && (
                 <div className="error-message">
-                  <p>❌ {error}</p>
+                  <p>{error}</p>
                 </div>
               )}
             </div>
@@ -351,12 +354,12 @@ function App() {
             <div className="card">
               <div className="summary-content">
                 <div>
-                  <h3>Data Loaded</h3>
+                  <h3>Data loaded</h3>
                   <p>
                     {totalProjects} projects ready for analysis
                     {useGemini && isGeminiAvailable() && (
                       <span className="ai-badge">
-                        ✨ AI Enhanced
+                        Model-assisted
                       </span>
                     )}
                   </p>
@@ -366,7 +369,7 @@ function App() {
                   onClick={runAnalysis}
                   className="btn btn-primary"
                 >
-                  Start Analysis
+                  Start analysis
                 </button>
               </div>
             </div>
@@ -376,7 +379,7 @@ function App() {
           {isAnalyzing && (
             <div className="enhanced-card">
               <div className="enhanced-card-header">
-                <h3 className="enhanced-card-title">🔄 Analysis in Progress</h3>
+                <h3 className="enhanced-card-title">Analysis in progress</h3>
               </div>
               <div className="enhanced-card-body">
                 <div className="loading-container">
@@ -385,7 +388,7 @@ function App() {
                   <div className="loading-subtext">
                     {currentStep === 1 && 'Categorizing projects by domain...'}
                     {currentStep === 2 && 'Analyzing project similarities...'}
-                    {currentStep === 3 && 'Processing with AI enhancement...'}
+                    {currentStep === 3 && 'Generating suggestions...'}
                     {currentStep === 4 && 'Finalizing results...'}
                   </div>
                   
@@ -413,7 +416,7 @@ function App() {
                     </div>
                     <div className={`progress-step ${currentStep >= 3 ? 'completed' : currentStep === 2 ? 'active' : ''}`}>
                       <div className="progress-step-icon">3</div>
-                      <div className="progress-step-text">AI Enhancement</div>
+                      <div className="progress-step-text">Suggestions</div>
                     </div>
                     <div className={`progress-step ${currentStep >= 4 ? 'completed' : currentStep === 3 ? 'active' : ''}`}>
                       <div className="progress-step-icon">4</div>
@@ -424,7 +427,7 @@ function App() {
                   {currentProject > 0 && totalProjects > 0 && (
                     <div className="project-progress">
                       <p className="progress-detail">
-                        📊 Processing project {currentProject} of {totalProjects}
+                        Processing project {currentProject} of {totalProjects}
                       </p>
                       <div className="mini-progress">
                         <div className="mini-progress-bar">
@@ -445,45 +448,45 @@ function App() {
           {domainResults.length > 0 && similarityResults.length >= 0 && !isAnalyzing && (
             <div className="results-section">
               <div className="results-header">
-                <h2>Analysis Results</h2>
+                <h2>Analysis results</h2>
                 <div className="download-actions">
-                  <button 
+                  <button
                     onClick={handleDownloadDomains}
                     className="btn btn-secondary"
                   >
-                    📊 Download Domain Report
+                    <Download size={16} aria-hidden="true" />
+                    Download domain report
                   </button>
-                  
-                  <button 
+
+                  <button
                     onClick={handleDownloadSimilarity}
                     className="btn btn-secondary"
                   >
-                    🔍 Download Similarity Report
+                    <Download size={16} aria-hidden="true" />
+                    Download similarity report
                   </button>
-                  
-                  <button 
+
+                  <button
                     onClick={handleDownloadCombined}
                     className="btn btn-primary"
                   >
-                    📋 Download Complete Report
+                    <Download size={16} aria-hidden="true" />
+                    Download complete report
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => setShowPanelAllocation(!showPanelAllocation)}
                     className="btn btn-secondary"
                   >
-                    🏛️ {showPanelAllocation ? 'Hide' : 'Show'} Panel Allocation
+                    {showPanelAllocation ? 'Hide' : 'Show'} panel allocation
                   </button>
 
                   <button
                     onClick={() => setActiveTab('panels')}
-                    className="btn btn-primary btn-large"
-                    style={{ fontWeight: 'bold' }}
+                    className="btn btn-primary"
                   >
-                    🚀 Generate Evaluation Panels
+                    Generate panels
                   </button>
-
-
                 </div>
               </div>
 
@@ -505,7 +508,7 @@ function App() {
               </div>
 
               <div className="results-content">
-                <h3>Domain Categorization Results</h3>
+                <h3>Domain categorization</h3>
                 <div className="table-container">
                   <table className="results-table">
                     <thead>
@@ -524,7 +527,7 @@ function App() {
                           <td>{project.primaryDomain}</td>
                           <td>
                             <span className={`method-badge ${project.categorizationMethod}`}>
-                              {project.categorizationMethod === 'gemini_ai' ? 'AI' : 'Keywords'}
+                              {project.categorizationMethod === 'gemini_ai' ? 'Model' : 'Keywords'}
                             </span>
                           </td>
                         </tr>
@@ -542,7 +545,7 @@ function App() {
               {/* Similarity Results */}
               {similarityResults.length > 0 && (
                 <div className="results-content">
-                  <h3>Project Similarity Analysis</h3>
+                  <h3>Similarity analysis</h3>
                   <div className="table-container">
                     <table className="results-table">
                       <thead>
@@ -568,7 +571,7 @@ function App() {
                             </td>
                             <td>
                               <span className={`method-badge ${pair.analysisMethod === 'gemini_ai' ? 'gemini-ai' : 'tfidf'}`}>
-                                {pair.analysisMethod === 'gemini_ai' ? '🤖 AI' : '📊 TF-IDF'}
+                                {pair.analysisMethod === 'gemini_ai' ? 'Model' : 'TF-IDF'}
                               </span>
                             </td>
                             <td title={pair.explanation}>
@@ -607,42 +610,46 @@ function App() {
           {/* Instructions - Only show when no data is loaded and not analyzing */}
           {projectsData.length === 0 && !isAnalyzing && (
             <div className="instructions">
-              <h2>🎓 Two Powerful Systems in One Platform</h2>
-              
+              <h2>What this tool does</h2>
+
               <div className="systems-overview">
                 <div className="system-card">
-                  <div className="system-icon">📊</div>
-                  <h3>FYP Analysis System</h3>
+                  <div className="system-icon">
+                    <BarChart3 size={20} aria-hidden="true" />
+                  </div>
+                  <h3>Project analysis</h3>
                   <p>Analyze project data for domain categorization and similarity detection</p>
                   <div className="system-features">
-                    <div className="feature">✓ AI-powered domain categorization</div>
-                    <div className="feature">✓ Similarity detection between projects</div>
-                    <div className="feature">✓ Multi-sheet Excel reports</div>
-                    <div className="feature">✓ Support for large datasets</div>
+                    <div className="feature">Domain categorization</div>
+                    <div className="feature">Similarity detection between projects</div>
+                    <div className="feature">Multi-sheet Excel reports</div>
+                    <div className="feature">Support for large datasets</div>
                   </div>
                   <div className="system-action">
-                    <strong>👆 Upload your Excel file above to get started</strong>
+                    Upload your Excel file above to get started.
                   </div>
                 </div>
 
                 <div className="system-card">
-                  <div className="system-icon">🏛️</div>
-                  <h3>Panel Creation System</h3>
+                  <div className="system-icon">
+                    <Users size={20} aria-hidden="true" />
+                  </div>
+                  <h3>Panel creation</h3>
                   <p>Create evaluation panels with instructor-project constraint management</p>
                   <div className="system-features">
-                    <div className="feature">✓ Text file input for instructor-project mapping</div>
-                    <div className="feature">✓ Hard & soft constraint management</div>
-                    <div className="feature">✓ Automatic overlap detection</div>
-                    <div className="feature">✓ Optimized instructor assignment</div>
+                    <div className="feature">Text file input for instructor-project mapping</div>
+                    <div className="feature">Hard and soft constraint management</div>
+                    <div className="feature">Automatic overlap detection</div>
+                    <div className="feature">Optimized instructor assignment</div>
                   </div>
                   <div className="system-action">
-                    <strong>👆 Use the Panel Creation section above</strong>
+                    Use the Panel creation tab above.
                   </div>
                 </div>
               </div>
 
               <div className="getting-started">
-                <h3>Getting Started</h3>
+                <h3>Getting started</h3>
                 <div className="instructions-grid">
                   <div className="instruction-step">
                     <div className="step-number">1</div>
@@ -662,31 +669,39 @@ function App() {
               </div>
               
               <div className="pro-tip">
-                <p>💡 <strong>Pro tip:</strong> AI-powered classification and collision detection run automatically on the deployed model — just upload your Excel file and start the analysis!</p>
+                <p><strong>Note:</strong> classification and collision detection run automatically — upload your Excel file and start the analysis.</p>
               </div>
-              
+
               <div className="feature-highlights">
-                <h3>Key Features</h3>
+                <h3>Key features</h3>
                 <div className="features-grid">
                   <div className="feature-item">
-                    <span className="feature-icon">🤖</span>
-                    <h4>AI-Powered Analysis</h4>
-                    <p>Deployed AI model integration for intelligent project categorization</p>
+                    <span className="feature-icon">
+                      <Layers size={18} aria-hidden="true" />
+                    </span>
+                    <h4>Automatic categorization</h4>
+                    <p>Projects are categorized by domain from their title and scope</p>
                   </div>
                   <div className="feature-item">
-                    <span className="feature-icon">📊</span>
-                    <h4>15+ Domain Categories</h4>
-                    <p>Comprehensive categorization across AI/ML, Web Dev, IoT, Cybersecurity, and more</p>
+                    <span className="feature-icon">
+                      <BarChart3 size={18} aria-hidden="true" />
+                    </span>
+                    <h4>15+ domain categories</h4>
+                    <p>Categorization across AI/ML, web development, IoT, cybersecurity, and more</p>
                   </div>
                   <div className="feature-item">
-                    <span className="feature-icon">🔍</span>
-                    <h4>Similarity Detection</h4>
-                    <p>Advanced TF-IDF analysis to find similar projects with detailed explanations</p>
+                    <span className="feature-icon">
+                      <Search size={18} aria-hidden="true" />
+                    </span>
+                    <h4>Similarity detection</h4>
+                    <p>TF-IDF analysis to find similar projects with detailed explanations</p>
                   </div>
                   <div className="feature-item">
-                    <span className="feature-icon">📋</span>
-                    <h4>Multi-Sheet Reports</h4>
-                    <p>Detailed Excel reports organized by domains and similarity levels</p>
+                    <span className="feature-icon">
+                      <FileSpreadsheet size={18} aria-hidden="true" />
+                    </span>
+                    <h4>Multi-sheet reports</h4>
+                    <p>Excel reports organized by domains and similarity levels</p>
                   </div>
                 </div>
               </div>
@@ -700,7 +715,7 @@ function App() {
             <div className="panel-creation-section">
               <div className="card">
                 <div className="panel-creation-header">
-                  <h2>🏛️ Panel Creation System</h2>
+                  <h2>Panel creation</h2>
                   <p className="section-description">
                     Create evaluation panels from instructor-project data using constraint-based allocation.{' '}
                     {projectsData.length === 0 ?

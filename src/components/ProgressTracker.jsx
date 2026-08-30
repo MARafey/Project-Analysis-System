@@ -96,7 +96,7 @@ const ProgressTracker = ({
                   
                   {stepStatus === 'completed' && (
                     <span className="text-xs text-green-600 font-medium">
-                      ✓ Done
+                      Done
                     </span>
                   )}
                 </div>

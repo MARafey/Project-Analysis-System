@@ -7,6 +7,7 @@ import { readExcelFile } from '../utils/excelUtils';
 import { isGeminiAvailable, generatePanelAllocationSuggestions, generateBalancedPanelAllocationSuggestions, generatePanelVariants } from '../utils/geminiApi';
 import { validateAllocation } from '../utils/allocationValidator';
 import { toast } from 'react-toastify';
+import { Check, AlertTriangle, Upload, Users, Download, ChevronDown } from 'lucide-react';
 import ScheduleVariants, { AllocationAudit } from './ScheduleVariants';
 
 const ConstraintBasedPanelAllocation = ({ 
@@ -426,9 +427,11 @@ ${instructorList}`;
     <div className="constraint-based-panel-allocation">
       <div className="enhanced-card compact-setup-card">
         <div className={`compact-analysis-status ${hasFYPAnalysis ? 'available' : 'unavailable'}`}>
-          {hasFYPAnalysis
-            ? '✓ FYP similarity analysis available — allocation will consider project similarity.'
-            : '⚠ No FYP analysis data — allocation will use instructor overlap only.'}
+          {hasFYPAnalysis ? (
+            <><Check size={16} aria-hidden="true" /> FYP similarity analysis available — allocation will consider project similarity.</>
+          ) : (
+            <><AlertTriangle size={16} aria-hidden="true" /> No FYP analysis data — allocation will use instructor overlap only.</>
+          )}
         </div>
 
         {/* Row 1 — constraints */}
@@ -474,9 +477,9 @@ ${instructorList}`;
               className="file-input-hidden"
               disabled={isProcessing}
             />
-            <span>📊 Upload Excel</span>
+            <span className="compact-upload-label"><Upload size={16} aria-hidden="true" /> Upload Excel</span>
             {excelData && excelData.length > 0 && (
-              <span className="compact-upload-check">✓ {supervisorStats ? supervisorStats.totalProjects : excelData.length} projects</span>
+              <span className="compact-upload-check"><Check size={14} aria-hidden="true" /> {supervisorStats ? supervisorStats.totalProjects : excelData.length} projects</span>
             )}
           </label>
 
@@ -491,9 +494,9 @@ ${instructorList}`;
               className="file-input-hidden"
               disabled={isProcessing || !excelData}
             />
-            <span>👩‍🏫 Upload Teacher List</span>
+            <span className="compact-upload-label"><Users size={16} aria-hidden="true" /> Upload teacher list</span>
             {parsedData && (
-              <span className="compact-upload-check">✓ {parsedData.summary.totalInstructors} instructors</span>
+              <span className="compact-upload-check"><Check size={14} aria-hidden="true" /> {parsedData.summary.totalInstructors} instructors</span>
             )}
           </label>
 
@@ -503,7 +506,7 @@ ${instructorList}`;
             className={`btn btn-primary compact-start-btn ${isProcessing ? 'processing' : ''}`}
             type="button"
           >
-            {isProcessing ? '🔄 Allocating...' : '🚀 Start'}
+            {isProcessing ? 'Allocating...' : 'Start'}
           </button>
 
           <button
@@ -512,7 +515,7 @@ ${instructorList}`;
             className={`btn btn-secondary ${isGeneratingVariants ? 'processing' : ''}`}
             type="button"
           >
-            {isGeneratingVariants ? '🔄 Generating Variants...' : '🧬 Generate Schedule Variants (AI)'}
+            {isGeneratingVariants ? 'Generating variants...' : 'Generate schedule variants'}
           </button>
         </div>
         {!excelData && (
@@ -531,19 +534,19 @@ ${instructorList}`;
             </ul>
             <div className="compact-details-actions">
               <button onClick={handleDownloadSample} className="btn btn-secondary btn-sm" type="button">
-                📥 Download Sample
+                <Download size={14} aria-hidden="true" /> Download sample
               </button>
               <button onClick={() => downloadInstructorListTemplate()} className="btn btn-secondary btn-sm" type="button">
-                📋 Download Template
+                <Download size={14} aria-hidden="true" /> Download template
               </button>
               {supervisorStats && (
                 <button onClick={downloadSupervisorStats} className="btn btn-secondary btn-sm" type="button">
-                  📊 Download Supervisor Statistics
+                  <Download size={14} aria-hidden="true" /> Download supervisor statistics
                 </button>
               )}
               {supervisorStats && supervisorStats.supervisors.length > 0 && (
                 <button onClick={createInstructorListFromExcel} className="btn btn-secondary btn-sm" type="button">
-                  📝 Create Teacher List from Excel
+                  Create teacher list from Excel
                 </button>
               )}
             </div>
@@ -552,7 +555,7 @@ ${instructorList}`;
 
         {/* Row 3 — special restrictions (collapsed) */}
         <details className="compact-details">
-          <summary>➕ Special restrictions / requests</summary>
+          <summary>Special restrictions and requests</summary>
           <div className="compact-details-body">
             <textarea
               id="special-conditions-input"
@@ -564,7 +567,7 @@ ${instructorList}`;
               disabled={isProcessing || isGeneratingVariants}
             />
             <span className="help-text">
-              These conditions are passed to the AI when generating suggestions and schedule variants.
+              These conditions are taken into account when generating suggestions and schedule variants.
             </span>
           </div>
         </details>
@@ -572,7 +575,7 @@ ${instructorList}`;
         {isGeneratingVariants && (
           <div className="loading-container">
             <div className="loading-spinner"></div>
-            <div className="loading-text">Generating multiple schedule variants with AI...</div>
+            <div className="loading-text">Generating schedule variants...</div>
             <div className="loading-subtext">This may take a moment.</div>
           </div>
         )}
@@ -606,7 +609,7 @@ ${instructorList}`;
               </div>
               <div className={`progress-step ${processingProgress >= 20 ? 'completed' : processingProgress >= 10 ? 'active' : ''}`}>
                 <div className="progress-step-icon">2</div>
-                <div className="progress-step-text">AI Suggestions</div>
+                <div className="progress-step-text">Suggestions</div>
               </div>
               <div className={`progress-step ${processingProgress >= 60 ? 'completed' : processingProgress >= 40 ? 'active' : ''}`}>
                 <div className="progress-step-icon">3</div>
@@ -640,7 +643,7 @@ ${instructorList}`;
         {error && (
           <div className="allocation-error">
             <div className="error-message">
-              <h4>⚠️ {allocationResult ? 'Warning' : 'Error'}</h4>
+              <h4>{allocationResult ? 'Warning' : 'Error'}</h4>
               <p>{error}</p>
             </div>
           </div>
@@ -650,7 +653,7 @@ ${instructorList}`;
         {showFormatHelper && (
           <div className="format-helper">
             <div className="format-helper-content">
-              <h3>📝 Format Help</h3>
+              <h3>File format help</h3>
               <p>Some instructors in your list were not found in the Excel data. Here's how to fix it:</p>
               
               <div className="format-options">
@@ -683,12 +686,12 @@ Prof. Ahmed Ali`}
                   </pre>
                   <p><strong>Requirements:</strong></p>
                   <ul>
-                    <li>✅ One instructor name per line</li>
-                    <li>✅ Use exact names from Excel data</li>
-                    <li>✅ Include titles (Dr., Prof., Mr., Ms.)</li>
-                    <li>✅ Excel file must be uploaded first</li>
+                    <li>One instructor name per line</li>
+                    <li>Use exact names from Excel data</li>
+                    <li>Include titles (Dr., Prof., Mr., Ms.)</li>
+                    <li>Excel file must be uploaded first</li>
                   </ul>
-                  <p><strong>Smart Formatting:</strong> The system automatically formats names like:</p>
+                  <p><strong>Automatic formatting:</strong> the system formats names like:</p>
                   <ul>
                     <li><code>dr muhammad asim</code> → <code>Dr. Muhammad Asim</code></li>
                     <li><code>PROF AHMED ALI</code> → <code>Prof. Ahmed Ali</code></li>
@@ -702,14 +705,14 @@ Prof. Ahmed Ali`}
                   onClick={() => setShowFormatHelper(false)}
                   className="btn btn-secondary"
                 >
-                  Close Help
+                  Close help
                 </button>
-                
+
                 <button
                   onClick={() => downloadInstructorOnlyTemplate()}
                   className="btn btn-primary"
                 >
-                  📝 Download Template
+                  <Download size={16} aria-hidden="true" /> Download template
                 </button>
               </div>
             </div>
@@ -719,7 +722,7 @@ Prof. Ahmed Ali`}
         {/* Gemini AI Suggestions */}
         {geminiSuggestions && (
           <div className="gemini-suggestions">
-            <h3>🤖 AI Recommendations</h3>
+            <h3>Suggestions</h3>
             <div className="suggestions-content">
               {/* Balanced allocation suggestions */}
               {useBalancedAllocation && geminiSuggestions.balancedRecommendations ? (
@@ -836,7 +839,7 @@ Prof. Ahmed Ali`}
 
               {geminiSuggestions.potentialIssues && geminiSuggestions.potentialIssues.length > 0 && (
                 <div className="potential-issues">
-                  <h4>⚠️ Potential Issues to Consider</h4>
+                  <h4>Potential issues to consider</h4>
                   <ul>
                     {geminiSuggestions.potentialIssues.map((issue, index) => (
                       <li key={index}>{issue}</li>
@@ -847,7 +850,7 @@ Prof. Ahmed Ali`}
 
               {geminiSuggestions.optimizationTips && geminiSuggestions.optimizationTips.length > 0 && (
                 <div className="optimization-tips">
-                  <h4>💡 Optimization Tips</h4>
+                  <h4>Optimization tips</h4>
                   <ul>
                     {geminiSuggestions.optimizationTips.map((tip, index) => (
                       <li key={index}>{tip}</li>
@@ -863,11 +866,10 @@ Prof. Ahmed Ali`}
         {allocationResult && (
           <div className="allocation-results">
             <div className="results-header">
-              <h3>🎯 Allocation Results</h3>
+              <h3>Allocation results</h3>
               {allocationResult.summary?.algorithm && (
                 <div className="algorithm-used">
                   <span className="algorithm-badge">
-                    {allocationResult.summary.algorithm === 'Balanced Domain Diversity' ? '🎯' : '📋'} 
                     {allocationResult.summary.algorithm}
                   </span>
                 </div>
@@ -876,14 +878,14 @@ Prof. Ahmed Ali`}
                 onClick={downloadResults}
                 className="btn btn-primary"
               >
-                📥 Download Excel Report
+                <Download size={16} aria-hidden="true" /> Download Excel report
               </button>
             </div>
 
             {/* Constraint & Collision Audit */}
             {allocationAudit && (
               <div className="allocation-audit-wrapper">
-                <h4>🔍 Constraint & Collision Audit</h4>
+                <h4>Constraint and collision audit</h4>
                 <AllocationAudit audit={allocationAudit} />
               </div>
             )}
@@ -891,7 +893,7 @@ Prof. Ahmed Ali`}
             {/* Summary */}
             <div className="results-summary">
               <div className="summary-section">
-                <h4>📊 Summary</h4>
+                <h4>Summary</h4>
                 <div className="summary-grid">
                   <div className="summary-stat">
                     <span className="stat-label">Total Panels:</span>
@@ -922,11 +924,13 @@ Prof. Ahmed Ali`}
 
               {/* Project Balance Status */}
               <div className="project-balance-section">
-                <h4>🎯 Project Balance Status</h4>
+                <h4>Project balance</h4>
                 <div className="balance-status">
                   <div className={`balance-indicator ${allocationResult.summary.projectBalance.isBalanced ? 'balanced' : 'imbalanced'}`}>
                     <span className="balance-icon">
-                      {allocationResult.summary.projectBalance.isBalanced ? '✅' : '⚠️'}
+                      {allocationResult.summary.projectBalance.isBalanced
+                        ? <Check size={16} aria-hidden="true" />
+                        : <AlertTriangle size={16} aria-hidden="true" />}
                     </span>
                     <span className="balance-text">
                       {allocationResult.summary.projectBalance.isBalanced ? 'Balanced' : 'Imbalanced'}
@@ -956,11 +960,13 @@ Prof. Ahmed Ali`}
 
               {/* Instructor Balance Status */}
               <div className="instructor-balance-section">
-                <h4>👥 Instructor Balance Status</h4>
+                <h4>Instructor balance</h4>
                 <div className="balance-status">
                   <div className={`balance-indicator ${allocationResult.summary.instructorBalance.isBalanced ? 'balanced' : 'imbalanced'}`}>
                     <span className="balance-icon">
-                      {allocationResult.summary.instructorBalance.isBalanced ? '✅' : '⚠️'}
+                      {allocationResult.summary.instructorBalance.isBalanced
+                        ? <Check size={16} aria-hidden="true" />
+                        : <AlertTriangle size={16} aria-hidden="true" />}
                     </span>
                     <span className="balance-text">
                       {allocationResult.summary.instructorBalance.isBalanced ? 'Balanced' : 'Imbalanced'}
@@ -990,16 +996,16 @@ Prof. Ahmed Ali`}
 
               {/* Constraints Status */}
               <div className="constraints-status">
-                <h4>🎯 Constraints Status</h4>
+                <h4>Constraints</h4>
                 <div className="constraint-status-grid">
                   <div className="constraint-status hard">
-                    <span className="status-label">Hard Constraints:</span>
-                    <span className="status-value success">✅ All Satisfied</span>
+                    <span className="status-label">Hard constraints:</span>
+                    <span className="status-value success">All satisfied</span>
                   </div>
                   <div className="constraint-status soft">
-                    <span className="status-label">Soft Constraints:</span>
+                    <span className="status-label">Soft constraints:</span>
                     <span className={`status-value ${allocationResult.summary.constraints.soft.exceeded ? 'warning' : 'success'}`}>
-                      {allocationResult.summary.constraints.soft.exceeded ? '⚠️ Exceeded' : '✅ Satisfied'}
+                      {allocationResult.summary.constraints.soft.exceeded ? 'Exceeded' : 'Satisfied'}
                     </span>
                   </div>
                 </div>
@@ -1015,7 +1021,7 @@ Prof. Ahmed Ali`}
 
             {/* Instructor Assignments Summary */}
             <div className="instructor-assignments">
-              <h4>👥 Instructor Assignments</h4>
+              <h4>Instructor assignments</h4>
               <div className="assignments-summary">
                 <div className="assigned-instructors">
                   <h5>Assigned ({allocationResult.instructorAssignments.filter(i => i.status === 'Assigned').length})</h5>
@@ -1066,10 +1072,10 @@ Prof. Ahmed Ali`}
               const allWarnings = [...softWarnings, ...logResults.warnings];
               const allExpanded = expandedPanels.size === allocationResult.panels.length;
               const resultsTabs = [
-                { id: 'panels', label: '🏛️ Panels', count: allocationResult.panels.length },
-                { id: 'warnings', label: '⚠️ Warnings', count: allWarnings.length },
-                { id: 'hard', label: '🔴 Hard Restrictions', count: logResults.failed.length },
-                { id: 'log', label: '✅ Log', count: logResults.successful.length }
+                { id: 'panels', label: 'Panels', count: allocationResult.panels.length },
+                { id: 'warnings', label: 'Warnings', count: allWarnings.length },
+                { id: 'hard', label: 'Hard restrictions', count: logResults.failed.length },
+                { id: 'log', label: 'Log', count: logResults.successful.length }
               ];
 
               return (
@@ -1093,13 +1099,13 @@ Prof. Ahmed Ali`}
                   {activeResultsTab === 'panels' && (
             <div className="panels-display" role="tabpanel">
               <div className="panels-display-header">
-                <h4>🏛️ Panel Allocations</h4>
+                <h4>Panel allocations</h4>
                 <button
                   type="button"
                   className="btn btn-secondary expand-all-btn"
                   onClick={toggleAllPanels}
                 >
-                  {allExpanded ? '▴ Collapse all' : '▾ Expand all'}
+                  {allExpanded ? 'Collapse all' : 'Expand all'}
                 </button>
               </div>
               <div className="panels-grid">
@@ -1131,13 +1137,13 @@ Prof. Ahmed Ali`}
                           const absDeviation = Math.abs(deviation);
 
                           if (absDeviation <= 1) {
-                            return <span className="balance-perfect">🎯 Perfect Balance</span>;
+                            return <span className="balance-perfect">Projects balanced</span>;
                           } else if (absDeviation <= 2) {
-                            return <span className="balance-good">✅ Good Balance</span>;
+                            return <span className="balance-good">Projects near target</span>;
                           } else if (absDeviation <= 4) {
-                            return <span className="balance-moderate">⚠️ Moderate Deviation</span>;
+                            return <span className="balance-moderate">Moderate project deviation</span>;
                           } else {
-                            return <span className="balance-poor">❌ High Deviation</span>;
+                            return <span className="balance-poor">High project deviation</span>;
                           }
                         })()}
                         {/* Instructor Balance Indicator */}
@@ -1148,17 +1154,17 @@ Prof. Ahmed Ali`}
                           const absDeviation = Math.abs(deviation);
 
                           if (absDeviation === 0) {
-                            return <span className="balance-perfect">👥 Perfect Balance</span>;
+                            return <span className="balance-perfect">Instructors balanced</span>;
                           } else if (absDeviation <= 1) {
-                            return <span className="balance-good">👥 Good Balance</span>;
+                            return <span className="balance-good">Instructors near target</span>;
                           } else if (absDeviation <= 2) {
-                            return <span className="balance-moderate">👥 Moderate Deviation</span>;
+                            return <span className="balance-moderate">Moderate instructor deviation</span>;
                           } else {
-                            return <span className="balance-poor">👥 High Deviation</span>;
+                            return <span className="balance-poor">High instructor deviation</span>;
                           }
                         })()}
                       </div>
-                      <span className="panel-chevron" aria-hidden="true">▾</span>
+                      <span className="panel-chevron" aria-hidden="true"><ChevronDown size={16} /></span>
                     </button>
 
                     {isOpen && (
@@ -1272,19 +1278,19 @@ Prof. Ahmed Ali`}
                             if (uniqueDomains >= 3 && maxCount <= 4) {
                               return (
                                 <div className="domain-success">
-                                  ✅ Excellent domain diversity ({uniqueDomains} domains, max {maxCount} per domain)
+                                  Excellent domain diversity ({uniqueDomains} domains, max {maxCount} per domain)
                                 </div>
                               );
                             } else if (uniqueDomains >= 2) {
                               return (
                                 <div className="domain-moderate">
-                                  ⚡ Good domain diversity ({uniqueDomains} domains)
+                                  Good domain diversity ({uniqueDomains} domains)
                                 </div>
                               );
                             } else {
                               return (
                                 <div className="domain-warning">
-                                  ⚠️ Limited domain diversity (only {uniqueDomains} domain{uniqueDomains !== 1 ? 's' : ''})
+                                  Limited domain diversity (only {uniqueDomains} domain{uniqueDomains !== 1 ? 's' : ''})
                                 </div>
                               );
                             }
@@ -1292,7 +1298,7 @@ Prof. Ahmed Ali`}
                             if (maxCount > 4) {
                               return (
                                 <div className="domain-warning">
-                                  ⚠️ High concentration in one domain ({maxCount} projects)
+                                  High concentration in one domain ({maxCount} projects)
                                 </div>
                               );
                             }
@@ -1313,7 +1319,7 @@ Prof. Ahmed Ali`}
                     <div className="allocation-log" role="tabpanel">
                       {allWarnings.length > 0 ? (
                         <div className="log-section warnings">
-                          <h5>⚠️ Warnings ({allWarnings.length})</h5>
+                          <h5>Warnings ({allWarnings.length})</h5>
                           <ul>
                             {allWarnings.map((msg, idx) => (
                               <li key={idx}>{msg}</li>
@@ -1321,7 +1327,7 @@ Prof. Ahmed Ali`}
                           </ul>
                         </div>
                       ) : (
-                        <div className="tab-empty-state">No warnings 🎉</div>
+                        <div className="tab-empty-state">No warnings</div>
                       )}
                     </div>
                   )}
@@ -1330,7 +1336,7 @@ Prof. Ahmed Ali`}
                     <div className="allocation-log" role="tabpanel">
                       {logResults.failed.length > 0 ? (
                         <div className="log-section failed">
-                          <h5>🔴 Hard Restrictions ({logResults.failed.length})</h5>
+                          <h5>Hard restrictions ({logResults.failed.length})</h5>
                           <ul>
                             {logResults.failed.map((msg, idx) => (
                               <li key={idx}>{msg}</li>
@@ -1338,7 +1344,7 @@ Prof. Ahmed Ali`}
                           </ul>
                         </div>
                       ) : (
-                        <div className="tab-empty-state">No hard restriction violations 🎉</div>
+                        <div className="tab-empty-state">No hard restriction violations</div>
                       )}
                     </div>
                   )}
@@ -1347,7 +1353,7 @@ Prof. Ahmed Ali`}
                     <div className="allocation-log" role="tabpanel">
                       {logResults.successful.length > 0 ? (
                         <div className="log-section success">
-                          <h5>✅ Successful ({logResults.successful.length})</h5>
+                          <h5>Successful ({logResults.successful.length})</h5>
                           <ul>
                             {logResults.successful.map((msg, idx) => (
                               <li key={idx}>{msg}</li>
