@@ -72,7 +72,7 @@ const ConstraintBasedPanelAllocation = ({
         projectsPerPanel: calculatedProjectsPerPanel
       }));
     }
-  }, [parsedData]);
+  }, [parsedData, constraints.numberOfPanels]);
 
   // Handle Excel file upload
   const handleExcelUpload = useCallback(async (file) => {

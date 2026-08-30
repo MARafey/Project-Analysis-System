@@ -304,7 +304,6 @@ function findBestPanelForGroupSet(panels, groupIds, instructors, constraints, al
   // **ENHANCED BALANCED DISTRIBUTION STRATEGY**
   // Phase 1: Find minimum capacity across all panels
   const minGroups = Math.min(...panels.map(p => p.constraints.actualGroups));
-  const maxGroups = Math.max(...panels.map(p => p.constraints.actualGroups));
   
   // Calculate current project counts for each panel
   const panelProjectCounts = panels.map(panel => ({
@@ -314,7 +313,6 @@ function findBestPanelForGroupSet(panels, groupIds, instructors, constraints, al
   }));
   
   const minProjects = Math.min(...panelProjectCounts.map(p => p.currentProjects));
-  const maxProjects = Math.max(...panelProjectCounts.map(p => p.currentProjects));
   
   // Prioritize panels with minimum groups first (balanced distribution)
   const availablePanels = panels.filter(panel => {
@@ -327,7 +325,6 @@ function findBestPanelForGroupSet(panels, groupIds, instructors, constraints, al
   }
 
   for (const panel of availablePanels) {
-    const groupsAfterAllocation = panel.constraints.actualGroups + groupIds.length;
     const totalInstructors = new Set([...panel.instructors, ...instructors]);
     const instructorsAfterAllocation = totalInstructors.size;
     

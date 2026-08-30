@@ -486,8 +486,6 @@ function canPanelAccommodateGroup(panel, group, constraints) {
 
 function canPanelAccommodateCluster(panel, clusterGroups, constraints) {
   const clusterInstructors = new Set();
-  const clusterProjects = clusterGroups.reduce((sum, group) => sum + group.projects.length, 0);
-  
   clusterGroups.forEach(group => {
     group.supervisors.forEach(supervisor => clusterInstructors.add(supervisor));
   });
@@ -617,8 +615,7 @@ function detectProjectDomains(projectTitle) {
 function optimizeDomainBalance(panels, allocationResults) {
   panels.forEach(panel => {
     const domainEntries = Object.entries(panel.domains);
-    const totalProjects = panel.totalProjects;
-    
+
     // Check for domain concentration
     const highConcentrationDomains = domainEntries.filter(([_, count]) => count > 4);
     if (highConcentrationDomains.length > 0) {

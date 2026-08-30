@@ -20,6 +20,11 @@
  * @param {Array} excelData - Array of project data from Excel
  * @returns {Array} Array of project titles for the instructor
  */
+function isTitleKeywordWord(word, titleKeywords) {
+  const lower = word.toLowerCase();
+  return titleKeywords.some(keyword => lower === keyword || lower === keyword + '.');
+}
+
 function extractProjectsForInstructor(instructorName, excelData) {
   if (!excelData || !Array.isArray(excelData)) {
     console.warn('Invalid Excel data provided to extractProjectsForInstructor');
@@ -222,9 +227,7 @@ function autoSplitInstructorNames(textContent) {
         
         // Look for additional words that might be part of this name
         let j = i + 3;
-        while (j < words.length && !titleKeywords.some(keyword => 
-          words[j].toLowerCase() === keyword || words[j].toLowerCase() === keyword + '.'
-        )) {
+        while (j < words.length && !isTitleKeywordWord(words[j], titleKeywords)) {
           currentName += ` ${words[j]}`;
           j++;
         }
@@ -240,9 +243,7 @@ function autoSplitInstructorNames(textContent) {
         
         // Look for additional words
         let j = i + 2;
-        while (j < words.length && !titleKeywords.some(keyword => 
-          words[j].toLowerCase() === keyword || words[j].toLowerCase() === keyword + '.'
-        )) {
+        while (j < words.length && !isTitleKeywordWord(words[j], titleKeywords)) {
           currentName += ` ${words[j]}`;
           j++;
         }
