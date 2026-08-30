@@ -15,10 +15,12 @@ function loadEndpointConfig() {
     }
   } catch (e) { /* ignore corrupt config */ }
 
-  // Default: the deployed Aristral Ollama model. API key comes from .env.local
-  // (REACT_APP_MODEL_API_KEY) or is entered once in Settings.
+  // Default: same-origin proxy (api/chat.js) so the browser never calls the
+  // Ollama server directly — avoids CORS blocks and keeps the API key
+  // server-side. Set REACT_APP_MODEL_API_URL to bypass the proxy (e.g. a
+  // different endpoint that already allows CORS).
   return {
-    url: process.env.REACT_APP_MODEL_API_URL || 'https://ollama.aristral.com/api/chat',
+    url: process.env.REACT_APP_MODEL_API_URL || '/api/chat',
     apiKey: process.env.REACT_APP_MODEL_API_KEY || '',
     modelName: process.env.REACT_APP_MODEL_NAME || 'gemma4:cloud'
   };
