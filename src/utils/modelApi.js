@@ -1,13 +1,9 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-// Unified AI provider layer.
-// Primary: a custom deployed model endpoint (your hosted model), configured in
-// Settings or via REACT_APP_MODEL_API_URL. Fallback: Gemini via API key.
-// Both are consumed through a single generateJSON(prompt) call.
+// AI provider layer: the deployed model endpoint (Ollama at ollama.aristral.com
+// by default), configured in Settings or via REACT_APP_MODEL_* env vars.
+// All AI calls go through generateJSON(prompt).
 
 const STORAGE_KEY = 'fyp_model_endpoint_config';
 
-let geminiModel = null;
 let endpointConfig = loadEndpointConfig();
 
 function loadEndpointConfig() {
@@ -54,31 +50,13 @@ export function isModelEndpointAvailable() {
   return endpointConfig !== null;
 }
 
-export function initializeGemini(apiKey) {
-  try {
-    if (!apiKey) throw new Error('API key is required');
-    const genAI = new GoogleGenerativeAI(apiKey);
-    geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    return true;
-  } catch (error) {
-    console.error('Failed to initialize Gemini:', error);
-    return false;
-  }
-}
-
-export function isGeminiInitialized() {
-  return geminiModel !== null;
-}
-
-// True when any AI provider (deployed endpoint or Gemini) is ready.
+// True when the deployed model endpoint is configured.
 export function isAIAvailable() {
-  return isModelEndpointAvailable() || isGeminiInitialized();
+  return isModelEndpointAvailable();
 }
 
 export function getActiveProviderName() {
-  if (isModelEndpointAvailable()) return 'Deployed Model';
-  if (isGeminiInitialized()) return 'Gemini';
-  return 'None';
+  return isModelEndpointAvailable() ? 'Deployed Model' : 'None';
 }
 
 // ---- Core generation ----
@@ -160,30 +138,17 @@ async function callDeployedEndpoint(prompt) {
   return text;
 }
 
-async function callGemini(prompt) {
-  if (!geminiModel) throw new Error('Gemini AI not initialized');
-  const result = await geminiModel.generateContent(prompt);
-  const response = await result.response;
-  return response.text();
-}
-
-// Generate a JSON response from whichever provider is active.
-// Tries the deployed endpoint first, falls back to Gemini on failure.
+// Generate a JSON response from the deployed model, with retries.
 export async function generateJSON(prompt, { retries = 1 } = {}) {
-  const providers = [];
-  if (isModelEndpointAvailable()) providers.push(callDeployedEndpoint);
-  if (isGeminiInitialized()) providers.push(callGemini);
-  if (providers.length === 0) throw new Error('No AI provider configured');
+  if (!isModelEndpointAvailable()) throw new Error('AI model endpoint not configured');
 
   let lastError = null;
-  for (const provider of providers) {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const text = await provider(prompt);
-        return extractJSON(text);
-      } catch (error) {
-        lastError = error;
-      }
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const text = await callDeployedEndpoint(prompt);
+      return extractJSON(text);
+    } catch (error) {
+      lastError = error;
     }
   }
   throw lastError;

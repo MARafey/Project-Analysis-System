@@ -1,7 +1,6 @@
 import {
   generateJSON,
   isAIAvailable,
-  initializeGemini as initProvider,
   getActiveProviderName,
   testConnection
 } from './modelApi';
@@ -12,8 +11,8 @@ import {
   getSimilarityLevel
 } from './textProcessing';
 
-// AI analysis layer. All calls route through modelApi (deployed endpoint first,
-// Gemini fallback). Function names keep the legacy "Gemini" naming so existing
+// AI analysis layer. All calls route through modelApi (the deployed model
+// endpoint). Function names keep the legacy "Gemini" naming so existing
 // components continue to work unchanged.
 
 const CLASSIFY_BATCH_SIZE = 8;
@@ -23,11 +22,7 @@ const LOCAL_PREFILTER_THRESHOLD = 0.15;
 
 // ---- Provider management (legacy API) ----
 
-export function initializeGemini(apiKey) {
-  return initProvider(apiKey);
-}
-
-// Legacy name — now means "any AI provider is available" (deployed model or Gemini).
+// Legacy name — true when the deployed model endpoint is configured.
 export function isGeminiAvailable() {
   return isAIAvailable();
 }

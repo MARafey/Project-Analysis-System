@@ -28,13 +28,50 @@ const ConstraintBasedPanelAllocation = ({
   const [error, setError] = useState(null);
   const [showFormatHelper, setShowFormatHelper] = useState(false);
   const [geminiSuggestions, setGeminiSuggestions] = useState(null);
-  const [useGeminiEnhancement, setUseGeminiEnhancement] = useState(false);
-  const [useBalancedAllocation, setUseBalancedAllocation] = useState(false);
+  const [useGeminiEnhancement] = useState(true);
+  const [useBalancedAllocation] = useState(true);
   const [processingStep, setProcessingStep] = useState('');
   const [processingProgress, setProcessingProgress] = useState(0);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [variantsResult, setVariantsResult] = useState(null);
   const [isGeneratingVariants, setIsGeneratingVariants] = useState(false);
+  const [expandedPanels, setExpandedPanels] = useState(new Set());
+  const [activeResultsTab, setActiveResultsTab] = useState('panels');
+
+  // Reset results tabs and panel expansion whenever a new allocation arrives.
+  // Default: collapsed when there are more than 4 panels, expanded otherwise.
+  useEffect(() => {
+    if (allocationResult && allocationResult.panels) {
+      if (allocationResult.panels.length > 4) {
+        setExpandedPanels(new Set());
+      } else {
+        setExpandedPanels(new Set(allocationResult.panels.map(p => p.panelNumber)));
+      }
+      setActiveResultsTab('panels');
+    }
+  }, [allocationResult]);
+
+  const togglePanelExpanded = useCallback((panelNumber) => {
+    setExpandedPanels(prev => {
+      const next = new Set(prev);
+      if (next.has(panelNumber)) {
+        next.delete(panelNumber);
+      } else {
+        next.add(panelNumber);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAllPanels = useCallback(() => {
+    if (!allocationResult || !allocationResult.panels) return;
+    setExpandedPanels(prev => {
+      if (prev.size === allocationResult.panels.length) {
+        return new Set();
+      }
+      return new Set(allocationResult.panels.map(p => p.panelNumber));
+    });
+  }, [allocationResult]);
 
   // Projects derived from Excel data, enriched with AI-categorized domains when available.
   // Shape required by generatePanelVariants / validateAllocation:
@@ -387,31 +424,158 @@ ${instructorList}`;
 
   return (
     <div className="constraint-based-panel-allocation">
-      <div className="enhanced-card">
-        <div className="enhanced-card-header">
-          <h2 className="enhanced-card-title">📋 Constraint-Based Panel Allocation</h2>
-          <p className="section-description">
-            Upload a text file with instructor-project mappings and configure hard/soft constraints
-            to generate optimal panel allocations.
-          </p>
-          
-          {/* Similarity Analysis Status */}
-          <div className={`similarity-status ${hasFYPAnalysis ? 'available' : 'unavailable'}`}>
-            {hasFYPAnalysis ? (
-              <div className="status-indicator success">
-                <span className="status-icon">✓</span>
-                <span className="status-text">FYP Similarity Analysis Available</span>
-                <span className="status-detail">Panel allocation will consider project similarity for better grouping</span>
-              </div>
-            ) : (
-              <div className="status-indicator warning">
-                <span className="status-icon">⚠️</span>
-                <span className="status-text">No FYP Analysis Data</span>
-                <span className="status-detail">Panel allocation will be based on instructor overlap only. For better results, run FYP Analysis first.</span>
-              </div>
-            )}
-          </div>
+      <div className="enhanced-card compact-setup-card">
+        <div className={`compact-analysis-status ${hasFYPAnalysis ? 'available' : 'unavailable'}`}>
+          {hasFYPAnalysis
+            ? '✓ FYP similarity analysis available — allocation will consider project similarity.'
+            : '⚠ No FYP analysis data — allocation will use instructor overlap only.'}
         </div>
+
+        {/* Row 1 — constraints */}
+        <div className="compact-row compact-constraints-row">
+          <div className="compact-field">
+            <label className="compact-label" htmlFor="compact-num-panels">Number of Panels</label>
+            <input
+              id="compact-num-panels"
+              type="number"
+              min="1"
+              max="20"
+              value={constraints.numberOfPanels}
+              onChange={(e) => handleConstraintChange('numberOfPanels', e.target.value)}
+              className="compact-number-input"
+              disabled={isProcessing}
+            />
+          </div>
+          <div className="compact-field">
+            <label className="compact-label" htmlFor="compact-people-per-panel">People per Panel</label>
+            <input
+              id="compact-people-per-panel"
+              type="number"
+              min="1"
+              max="20"
+              value={constraints.instructorsPerPanel}
+              onChange={(e) => handleConstraintChange('instructorsPerPanel', e.target.value)}
+              className="compact-number-input"
+              disabled={isProcessing}
+            />
+          </div>
+          {parsedData && parsedData.projects && (
+            <span className="compact-muted">≈ {constraints.projectsPerPanel} projects/panel</span>
+          )}
+        </div>
+
+        {/* Row 2 — uploads + start */}
+        <div className="compact-row compact-upload-row">
+          <label className="compact-upload-btn">
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={(e) => e.target.files[0] && handleExcelUpload(e.target.files[0])}
+              className="file-input-hidden"
+              disabled={isProcessing}
+            />
+            <span>📊 Upload Excel</span>
+            {excelData && excelData.length > 0 && (
+              <span className="compact-upload-check">✓ {supervisorStats ? supervisorStats.totalProjects : excelData.length} projects</span>
+            )}
+          </label>
+
+          <label
+            className={`compact-upload-btn ${!excelData ? 'is-disabled' : ''}`}
+            title={!excelData ? 'Upload the Excel file first' : undefined}
+          >
+            <input
+              type="file"
+              accept=".txt"
+              onChange={(e) => e.target.files[0] && handleTextFileUpload(e.target.files[0])}
+              className="file-input-hidden"
+              disabled={isProcessing || !excelData}
+            />
+            <span>👩‍🏫 Upload Teacher List</span>
+            {parsedData && (
+              <span className="compact-upload-check">✓ {parsedData.summary.totalInstructors} instructors</span>
+            )}
+          </label>
+
+          <button
+            onClick={runPanelAllocation}
+            disabled={!parsedData || isProcessing}
+            className={`btn btn-primary compact-start-btn ${isProcessing ? 'processing' : ''}`}
+            type="button"
+          >
+            {isProcessing ? '🔄 Allocating...' : '🚀 Start'}
+          </button>
+
+          <button
+            onClick={runGenerateVariants}
+            disabled={!isGeminiAvailable() || !excelData || excelData.length === 0 || isGeneratingVariants || isProcessing}
+            className={`btn btn-secondary ${isGeneratingVariants ? 'processing' : ''}`}
+            type="button"
+          >
+            {isGeneratingVariants ? '🔄 Generating Variants...' : '🧬 Generate Schedule Variants (AI)'}
+          </button>
+        </div>
+        {!excelData && (
+          <span className="help-text compact-hint">Upload the Excel file first to enable the teacher list upload.</span>
+        )}
+
+        {/* File format help (collapsed) */}
+        <details className="compact-details">
+          <summary>Need help with file formats?</summary>
+          <div className="compact-details-body">
+            <ul className="compact-format-list">
+              <li>Upload the Excel file (.xlsx) first — it provides projects and supervisors.</li>
+              <li>The teacher list is a plain .txt file with one instructor name per line.</li>
+              <li>Use exact names as they appear in Excel, including titles (Dr., Prof., Mr., Ms.).</li>
+              <li>Empty lines and comments (#) are ignored.</li>
+            </ul>
+            <div className="compact-details-actions">
+              <button onClick={handleDownloadSample} className="btn btn-secondary btn-sm" type="button">
+                📥 Download Sample
+              </button>
+              <button onClick={() => downloadInstructorListTemplate()} className="btn btn-secondary btn-sm" type="button">
+                📋 Download Template
+              </button>
+              {supervisorStats && (
+                <button onClick={downloadSupervisorStats} className="btn btn-secondary btn-sm" type="button">
+                  📊 Download Supervisor Statistics
+                </button>
+              )}
+              {supervisorStats && supervisorStats.supervisors.length > 0 && (
+                <button onClick={createInstructorListFromExcel} className="btn btn-secondary btn-sm" type="button">
+                  📝 Create Teacher List from Excel
+                </button>
+              )}
+            </div>
+          </div>
+        </details>
+
+        {/* Row 3 — special restrictions (collapsed) */}
+        <details className="compact-details">
+          <summary>➕ Special restrictions / requests</summary>
+          <div className="compact-details-body">
+            <textarea
+              id="special-conditions-input"
+              className="form-input special-conditions-textarea"
+              rows={3}
+              value={specialInstructions}
+              onChange={(e) => setSpecialInstructions(e.target.value)}
+              placeholder="e.g. Dr. Khan must be in Panel 1; keep all blockchain projects apart; no panel larger than 8"
+              disabled={isProcessing || isGeneratingVariants}
+            />
+            <span className="help-text">
+              These conditions are passed to the AI when generating suggestions and schedule variants.
+            </span>
+          </div>
+        </details>
+
+        {isGeneratingVariants && (
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <div className="loading-text">Generating multiple schedule variants with AI...</div>
+            <div className="loading-subtext">This may take a moment.</div>
+          </div>
+        )}
 
         {/* Loading State */}
         {isProcessing && (
@@ -456,431 +620,9 @@ ${instructorList}`;
           </div>
         )}
 
-        <div className="enhanced-card-body">
-          {/* File Upload Section */}
-          <div className="file-upload-section">
-          <h3>📁 Upload Files</h3>
-          
-          {/* Step 1: Excel File Status */}
-          <div className="upload-step">
-            <h4>Step 1: FYP Excel Data</h4>
-            {excelData && excelData.length > 0 ? (
-              <div className="excel-already-loaded">
-                <div className="excel-preview">
-                  <div className="excel-stats">
-                    <span className="stat-badge">✅ Excel Data Available from FYP Analysis</span>
-                    <span className="stat-badge">{supervisorStats?.totalProjects} Projects</span>
-                    <span className="stat-badge">{supervisorStats?.totalSupervisors} Supervisors</span>
-                  </div>
-                </div>
-                <div className="excel-actions">
-                  {supervisorStats && (
-                    <button
-                      onClick={downloadSupervisorStats}
-                      className="btn btn-primary btn-sm"
-                      type="button"
-                    >
-                      📊 Download Supervisor Statistics
-                    </button>
-                  )}
-                </div>
-                <p className="help-text">
-                  ✅ Using Excel data from your FYP analysis. Projects will be automatically extracted for instructors.
-                </p>
-                
-                {supervisorStats && supervisorStats.supervisors.length > 0 && (
-                  <div className="available-supervisors">
-                    <h5>Available Supervisors in Excel Data:</h5>
-                    <div className="supervisor-list">
-                      {supervisorStats.supervisors.slice(0, 10).map((supervisor, index) => (
-                        <span key={index} className="supervisor-chip">
-                          {supervisor.name} ({supervisor.projectCount})
-                        </span>
-                      ))}
-                      {supervisorStats.supervisors.length > 10 && (
-                        <span className="more-supervisors">+{supervisorStats.supervisors.length - 10} more</span>
-                      )}
-                    </div>
-                    <p className="supervisor-help">
-                      Copy these names to create your instructor list. Numbers show project count.
-                      <br />
-                      <strong>Note:</strong> You can also include instructors who don't supervise projects - they'll be assigned as panel members.
-                    </p>
-                    <button
-                      onClick={() => createInstructorListFromExcel()}
-                      className="btn btn-secondary btn-sm"
-                      type="button"
-                    >
-                      📋 Create Text File with All Supervisors
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="excel-upload-section">
-                <div className="upload-controls">
-                  <div className="file-upload-container">
-                    <label className="file-upload-label">
-                      <input
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={(e) => e.target.files[0] && handleExcelUpload(e.target.files[0])}
-                        className="file-input-hidden"
-                        disabled={isProcessing}
-                      />
-                      <div className="file-upload-button">
-                        <span className="upload-icon">📊</span>
-                        <span>Choose Excel File</span>
-                      </div>
-                    </label>
-                    
-                    {supervisorStats && (
-                      <button
-                        onClick={downloadSupervisorStats}
-                        className="btn btn-primary btn-sm"
-                        type="button"
-                      >
-                        📊 Download Supervisor Statistics
-                      </button>
-                    )}
-                  </div>
-                </div>
-                
-                {excelData && (
-                  <div className="excel-preview">
-                    <div className="excel-stats">
-                      <span className="stat-badge">✅ Excel Loaded</span>
-                      <span className="stat-badge">{supervisorStats?.totalProjects} Projects</span>
-                      <span className="stat-badge">{supervisorStats?.totalSupervisors} Supervisors</span>
-                    </div>
-                  </div>
-                )}
-                
-                <p className="help-text">
-                  Upload your FYP Excel file to enable automatic project extraction for instructors.
-                </p>
-              </div>
-            )}
-          </div>
+      </div>
 
-          {/* Step 2: Instructor Text File Upload */}
-          <div className="upload-step">
-            <h4>Step 2: Upload Instructor List</h4>
-            <div className="upload-controls">
-              <div className="file-upload-container">
-                <label className="file-upload-label">
-                  <input
-                    type="file"
-                    accept=".txt"
-                    onChange={(e) => e.target.files[0] && handleTextFileUpload(e.target.files[0])}
-                    className="file-input-hidden"
-                    disabled={isProcessing}
-                  />
-                  <div className="file-upload-button">
-                    <span className="upload-icon">📝</span>
-                    <span>Choose Text File</span>
-                  </div>
-                </label>
-                
-                <button
-                  onClick={handleDownloadSample}
-                  className="btn btn-secondary btn-sm"
-                  type="button"
-                >
-                  📥 Download Sample
-                </button>
-                
-                <button
-                  onClick={() => downloadInstructorListTemplate()}
-                  className="btn btn-secondary btn-sm"
-                  type="button"
-                >
-                  📋 Download Template
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          <div className="file-format-help">
-            <h4>Expected File Format:</h4>
-            
-            <div className="format-option">
-               <div className="format-requirements">
-                 <strong>Requirements:</strong>
-                 <ul>
-                   <li>✅ Excel file must be uploaded first</li>
-                   <li>✅ Use exact names as they appear in Excel</li>
-                   <li>✅ Include titles (Dr., Prof., Mr., Ms., etc.)</li>
-                   <li>✅ One instructor name per line</li>
-                   <li>✅ Empty lines and comments (#) are ignored</li>
-                 </ul>
-                 
-                </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Supervisor Statistics Preview */}
-        {supervisorStats && !parsedData && (
-          <div className="supervisor-stats-preview">
-            <h3>📊 Supervisor Statistics</h3>
-            <div className="preview-stats">
-              <div className="stat-item">
-                <span className="stat-label">Total Supervisors:</span>
-                <span className="stat-value">{supervisorStats.totalSupervisors}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Total Projects:</span>
-                <span className="stat-value">{supervisorStats.totalProjects}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Avg Projects/Supervisor:</span>
-                <span className="stat-value">{supervisorStats.averageProjectsPerSupervisor.toFixed(1)}</span>
-              </div>
-            </div>
-
-            <div className="top-supervisors">
-              <h4>Top Supervisors by Project Count:</h4>
-              <div className="supervisors-list">
-                {supervisorStats.supervisors.slice(0, 5).map((supervisor, index) => (
-                  <div key={supervisor.name} className="supervisor-preview">
-                    <span className="supervisor-rank">#{index + 1}</span>
-                    <span className="supervisor-name">{supervisor.name}</span>
-                    <span className="supervisor-count">{supervisor.projectCount} projects</span>
-                  </div>
-                ))}
-                {supervisorStats.supervisors.length > 5 && (
-                  <div className="more-supervisors">+{supervisorStats.supervisors.length - 5} more supervisors</div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Data Preview */}
-        {parsedData && (
-          <div className="data-preview">
-            <h3>📊 Parsed Data Summary</h3>
-            <div className="preview-stats">
-              <div className="stat-item">
-                <span className="stat-label">Instructors:</span>
-                <span className="stat-value">{parsedData.summary.totalInstructors}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Projects:</span>
-                <span className="stat-value">{parsedData.summary.totalProjects}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Groups:</span>
-                <span className="stat-value">{parsedData.summary.totalGroups}</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-label">Avg Projects/Instructor:</span>
-                <span className="stat-value">{parsedData.summary.averageProjectsPerInstructor.toFixed(1)}</span>
-              </div>
-            </div>
-
-            {/* Show some sample groups */}
-            <div className="sample-groups">
-              <h4>Sample Groups:</h4>
-              <div className="groups-list">
-                {parsedData.groups.slice(0, 3).map(group => (
-                  <div key={group.id} className="group-preview">
-                    <span className="group-id">{group.id}</span>
-                    <span className="group-projects">Projects: {group.projects.join(', ')}</span>
-                    <span className="group-supervisors">Supervisor: {group.primarySupervisor}</span>
-                  </div>
-                ))}
-                {parsedData.groups.length > 3 && (
-                  <div className="more-groups">+{parsedData.groups.length - 3} more groups</div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-          </div>
-        </div>
-
-        {/* Constraints Configuration */}
-        {parsedData && (
-          <>
-            <div className="enhanced-card-header">
-              <h3 className="enhanced-card-title">⚙️ Configure Constraints</h3>
-            </div>
-            <div className="enhanced-card-body">
-              <div className="constraints-config">
-            
-            <div className="constraints-grid">
-              <div className="constraint-group">
-                <h4>🔴 Hard Constraints</h4>
-                <div className="form-group">
-                  <label className="form-label">Total Number of Panels</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={constraints.numberOfPanels}
-                    onChange={(e) => handleConstraintChange('numberOfPanels', e.target.value)}
-                    className="form-input"
-                    disabled={isProcessing}
-                  />
-                  <span className="help-text">Cannot be exceeded</span>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Max Instructors per Panel</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={constraints.instructorsPerPanel}
-                    onChange={(e) => handleConstraintChange('instructorsPerPanel', e.target.value)}
-                    className="form-input"
-                    disabled={isProcessing}
-                  />
-                  <span className="help-text">Cannot be exceeded</span>
-                </div>
-              </div>
-
-              <div className="constraint-group">
-                <h4>🟡 Soft Constraints</h4>
-                <div className="form-group">
-                  <label className="form-label">Calculated Projects per Panel</label>
-                  <div className="calculated-value">
-                    {parsedData && parsedData.projects ? 
-                      `${constraints.projectsPerPanel} (${parsedData.projects.length} total projects ÷ ${constraints.numberOfPanels} panels)` :
-                      'Calculating...'
-                    }
-                  </div>
-                  <span className="help-text">Automatically calculated based on total projects and panels</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Allocation Algorithm Options */}
-            <div className="algorithm-options-section">
-              <h4>🔧 Allocation Algorithm</h4>
-              
-              <div className="form-group">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={useBalancedAllocation}
-                    onChange={(e) => setUseBalancedAllocation(e.target.checked)}
-                    disabled={isProcessing}
-                  />
-                  <span>Use Balanced Panel Allocation with Domain Diversity</span>
-                </label>
-                <p className="help-text">
-                  🎯 <strong>Recommended:</strong> Distributes similar projects across panels, ensures domain diversity, 
-                  and assigns instructors based on project majority. Prevents clustering of similar projects.
-                </p>
-              </div>
-
-              {!useBalancedAllocation && (
-                <div className="algorithm-info">
-                  <p className="algorithm-description">
-                    📋 <strong>Standard Algorithm:</strong> Groups similar projects together in the same panel 
-                    based on supervisor overlap and similarity scores.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* AI Enhancement Options */}
-            {isGeminiAvailable() && excelData && (
-              <div className="ai-enhancement-section">
-                <h4>🤖 AI Enhancement</h4>
-                <div className="form-group">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={useGeminiEnhancement}
-                      onChange={(e) => setUseGeminiEnhancement(e.target.checked)}
-                      disabled={isProcessing}
-                    />
-                    <span>Use Gemini AI for enhanced panel allocation suggestions</span>
-                  </label>
-                  <p className="help-text">
-                    {useBalancedAllocation 
-                      ? "Get AI-powered recommendations for balanced domain distribution and optimal project distribution"
-                      : "Get AI-powered recommendations for optimal panel composition with domain diversity analysis"
-                    }
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div className="allocation-actions">
-              <button
-                onClick={runPanelAllocation}
-                disabled={!parsedData || isProcessing}
-                className={`btn btn-primary ${isProcessing ? 'processing' : ''}`}
-              >
-                {isProcessing ? '🔄 Allocating...' : 
-                 useBalancedAllocation && useGeminiEnhancement && isGeminiAvailable() ? '🚀 Generate AI-Enhanced Balanced Panels' :
-                 useBalancedAllocation ? '🎯 Generate Balanced Panels with Domain Diversity' :
-                 useGeminiEnhancement && isGeminiAvailable() ? '🚀 Generate AI-Enhanced Panels' : 
-                 '🚀 Generate Panel Allocation'}
-              </button>
-            </div>
-          </div>
-            </div>
-          </>
-        )}
-
-        {/* Special Conditions & AI Schedule Variants */}
-        {excelData && excelData.length > 0 && (
-          <>
-            <div className="enhanced-card-header">
-              <h3 className="enhanced-card-title">📝 Special Conditions & Schedule Variants</h3>
-            </div>
-            <div className="enhanced-card-body">
-              <div className="special-conditions-section">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="special-conditions-input">
-                    Special conditions / requests (optional)
-                  </label>
-                  <textarea
-                    id="special-conditions-input"
-                    className="form-input special-conditions-textarea"
-                    rows={3}
-                    value={specialInstructions}
-                    onChange={(e) => setSpecialInstructions(e.target.value)}
-                    placeholder="e.g. Dr. Khan must be in Panel 1; keep all blockchain projects apart; no panel larger than 8"
-                    disabled={isProcessing || isGeneratingVariants}
-                  />
-                  <span className="help-text">
-                    These conditions are passed to the AI when generating suggestions and schedule variants.
-                  </span>
-                </div>
-
-                <div className="allocation-actions">
-                  <button
-                    onClick={runGenerateVariants}
-                    disabled={!isGeminiAvailable() || !excelData || excelData.length === 0 || isGeneratingVariants || isProcessing}
-                    className={`btn btn-primary ${isGeneratingVariants ? 'processing' : ''}`}
-                    type="button"
-                  >
-                    {isGeneratingVariants ? '🔄 Generating Variants...' : '🧬 Generate Schedule Variants (AI)'}
-                  </button>
-                  {!isGeminiAvailable() && (
-                    <span className="help-text">AI provider not configured — variants unavailable.</span>
-                  )}
-                </div>
-
-                {isGeneratingVariants && (
-                  <div className="loading-container">
-                    <div className="loading-spinner"></div>
-                    <div className="loading-text">Generating multiple schedule variants with AI...</div>
-                    <div className="loading-subtext">This may take a moment.</div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
 
         {/* Schedule Variants Display */}
         {variantsResult && (
@@ -1271,13 +1013,106 @@ Prof. Ahmed Ali`}
               </div>
             </div>
 
-            {/* Panel Details */}
-            <div className="panels-display">
-              <h4>🏛️ Panel Allocations</h4>
+            {/* Instructor Assignments Summary */}
+            <div className="instructor-assignments">
+              <h4>👥 Instructor Assignments</h4>
+              <div className="assignments-summary">
+                <div className="assigned-instructors">
+                  <h5>Assigned ({allocationResult.instructorAssignments.filter(i => i.status === 'Assigned').length})</h5>
+                  <div className="instructors-list">
+                    {allocationResult.instructorAssignments
+                      .filter(i => i.status === 'Assigned')
+                      .slice(0, 5)
+                      .map(assignment => (
+                        <div key={assignment.instructorName} className="assignment-item">
+                          <span className="instructor-name">{assignment.instructorName}</span>
+                          <span className="panel-info">Panel {assignment.panelAssigned}</span>
+                          <span className="project-count">{assignment.projectCount} projects</span>
+                        </div>
+                      ))}
+                    {allocationResult.instructorAssignments.filter(i => i.status === 'Assigned').length > 5 && (
+                      <div className="more-assignments">
+                        +{allocationResult.instructorAssignments.filter(i => i.status === 'Assigned').length - 5} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {allocationResult.instructorAssignments.some(i => i.status === 'Unassigned') && (
+                  <div className="unassigned-instructors">
+                    <h5>Unassigned ({allocationResult.instructorAssignments.filter(i => i.status === 'Unassigned').length})</h5>
+                    <div className="instructors-list">
+                      {allocationResult.instructorAssignments
+                        .filter(i => i.status === 'Unassigned')
+                        .map(assignment => (
+                          <div key={assignment.instructorName} className="assignment-item unassigned">
+                            <span className="instructor-name">{assignment.instructorName}</span>
+                            <span className="project-count">{assignment.projectCount} projects</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Tabbed Results: Panels / Warnings / Hard Restrictions / Log */}
+            {(() => {
+              const logResults = allocationResult.allocationResults || { successful: [], failed: [], warnings: [] };
+              const softConstraints = allocationResult.summary?.constraints?.soft;
+              const softWarnings = softConstraints?.exceeded
+                ? [`Soft constraint exceeded: ${softConstraints.reason} (max groups in any panel: ${softConstraints.maxGroupsInAnyPanel})`]
+                : [];
+              const allWarnings = [...softWarnings, ...logResults.warnings];
+              const allExpanded = expandedPanels.size === allocationResult.panels.length;
+              const resultsTabs = [
+                { id: 'panels', label: '🏛️ Panels', count: allocationResult.panels.length },
+                { id: 'warnings', label: '⚠️ Warnings', count: allWarnings.length },
+                { id: 'hard', label: '🔴 Hard Restrictions', count: logResults.failed.length },
+                { id: 'log', label: '✅ Log', count: logResults.successful.length }
+              ];
+
+              return (
+                <div className="results-tabs-section">
+                  <div className="results-tabs" role="tablist" aria-label="Allocation results">
+                    {resultsTabs.map(tab => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={activeResultsTab === tab.id}
+                        className={`results-tab ${activeResultsTab === tab.id ? 'active' : ''}`}
+                        onClick={() => setActiveResultsTab(tab.id)}
+                      >
+                        {tab.label}
+                        <span className="results-tab-count">{tab.count}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {activeResultsTab === 'panels' && (
+            <div className="panels-display" role="tabpanel">
+              <div className="panels-display-header">
+                <h4>🏛️ Panel Allocations</h4>
+                <button
+                  type="button"
+                  className="btn btn-secondary expand-all-btn"
+                  onClick={toggleAllPanels}
+                >
+                  {allExpanded ? '▴ Collapse all' : '▾ Expand all'}
+                </button>
+              </div>
               <div className="panels-grid">
-                {allocationResult.panels.map(panel => (
-                  <div key={panel.panelNumber} className="panel-card">
-                    <div className="panel-header">
+                {allocationResult.panels.map(panel => {
+                  const isOpen = expandedPanels.has(panel.panelNumber);
+                  return (
+                  <div key={panel.panelNumber} className={`panel-card ${isOpen ? 'expanded' : 'collapsed'}`}>
+                    <button
+                      type="button"
+                      className="panel-header panel-header-toggle"
+                      onClick={() => togglePanelExpanded(panel.panelNumber)}
+                      aria-expanded={isOpen}
+                    >
                       <h5>Panel {panel.panelNumber}</h5>
                       <div className="panel-stats">
                         <span className="stat-badge groups">
@@ -1289,14 +1124,12 @@ Prof. Ahmed Ali`}
                         <span className="stat-badge instructors">
                           {panel.instructors.length} Instructors
                         </span>
-                      </div>
-                      {/* Project Balance Indicator */}
-                      <div className="panel-balance-indicator">
+                        {/* Project Balance Indicator */}
                         {(() => {
                           const avgProjects = allocationResult.summary.averageProjectsPerPanel;
                           const deviation = panel.totalProjects - avgProjects;
                           const absDeviation = Math.abs(deviation);
-                          
+
                           if (absDeviation <= 1) {
                             return <span className="balance-perfect">🎯 Perfect Balance</span>;
                           } else if (absDeviation <= 2) {
@@ -1307,16 +1140,13 @@ Prof. Ahmed Ali`}
                             return <span className="balance-poor">❌ High Deviation</span>;
                           }
                         })()}
-                      </div>
-
-                      {/* Instructor Balance Indicator */}
-                      <div className="panel-balance-indicator">
+                        {/* Instructor Balance Indicator */}
                         {(() => {
                           const targetInstructors = constraints.instructorsPerPanel;
                           const currentInstructors = panel.instructors.length;
                           const deviation = currentInstructors - targetInstructors;
                           const absDeviation = Math.abs(deviation);
-                          
+
                           if (absDeviation === 0) {
                             return <span className="balance-perfect">👥 Perfect Balance</span>;
                           } else if (absDeviation <= 1) {
@@ -1328,8 +1158,10 @@ Prof. Ahmed Ali`}
                           }
                         })()}
                       </div>
-                    </div>
+                      <span className="panel-chevron" aria-hidden="true">▾</span>
+                    </button>
 
+                    {isOpen && (
                     <div className="panel-content">
                       <div className="panel-section">
                         <h6>Projects ({panel.constraints.actualGroups} groups)</h6>
@@ -1469,132 +1301,70 @@ Prof. Ahmed Ali`}
                         })()}
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Instructor Assignments Summary */}
-            <div className="instructor-assignments">
-              <h4>👥 Instructor Assignments</h4>
-              <div className="assignments-summary">
-                <div className="assigned-instructors">
-                  <h5>Assigned ({allocationResult.instructorAssignments.filter(i => i.status === 'Assigned').length})</h5>
-                  <div className="instructors-list">
-                    {allocationResult.instructorAssignments
-                      .filter(i => i.status === 'Assigned')
-                      .slice(0, 5)
-                      .map(assignment => (
-                        <div key={assignment.instructorName} className="assignment-item">
-                          <span className="instructor-name">{assignment.instructorName}</span>
-                          <span className="panel-info">Panel {assignment.panelAssigned}</span>
-                          <span className="project-count">{assignment.projectCount} projects</span>
-                        </div>
-                      ))}
-                    {allocationResult.instructorAssignments.filter(i => i.status === 'Assigned').length > 5 && (
-                      <div className="more-assignments">
-                        +{allocationResult.instructorAssignments.filter(i => i.status === 'Assigned').length - 5} more
-                      </div>
                     )}
                   </div>
-                </div>
-
-                {allocationResult.instructorAssignments.some(i => i.status === 'Unassigned') && (
-                  <div className="unassigned-instructors">
-                    <h5>Unassigned ({allocationResult.instructorAssignments.filter(i => i.status === 'Unassigned').length})</h5>
-                    <div className="instructors-list">
-                      {allocationResult.instructorAssignments
-                        .filter(i => i.status === 'Unassigned')
-                        .map(assignment => (
-                          <div key={assignment.instructorName} className="assignment-item unassigned">
-                            <span className="instructor-name">{assignment.instructorName}</span>
-                            <span className="project-count">{assignment.projectCount} projects</span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
+                  );
+                })}
               </div>
             </div>
+                  )}
 
-            {/* Allocation Log */}
-            {allocationResult.allocationResults && (
-              <div className="allocation-log">
-                <h4>📋 Allocation Log</h4>
-                <div className="log-sections">
-                  {allocationResult.allocationResults.successful.length > 0 && (
-                    <div className="log-section success">
-                      <h5>✅ Successful ({allocationResult.allocationResults.successful.length})</h5>
-                      <ul>
-                        {allocationResult.allocationResults.successful.slice(0, 3).map((msg, idx) => (
-                          <li key={idx}>{msg}</li>
-                        ))}
-                        {allocationResult.allocationResults.successful.length > 3 && (
-                          <li>... and {allocationResult.allocationResults.successful.length - 3} more</li>
-                        )}
-                      </ul>
+                  {activeResultsTab === 'warnings' && (
+                    <div className="allocation-log" role="tabpanel">
+                      {allWarnings.length > 0 ? (
+                        <div className="log-section warnings">
+                          <h5>⚠️ Warnings ({allWarnings.length})</h5>
+                          <ul>
+                            {allWarnings.map((msg, idx) => (
+                              <li key={idx}>{msg}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : (
+                        <div className="tab-empty-state">No warnings 🎉</div>
+                      )}
                     </div>
                   )}
 
-                  {allocationResult.allocationResults.failed.length > 0 && (
-                    <div className="log-section failed">
-                      <h5>❌ Failed ({allocationResult.allocationResults.failed.length})</h5>
-                      <ul>
-                        {allocationResult.allocationResults.failed.map((msg, idx) => (
-                          <li key={idx}>{msg}</li>
-                        ))}
-                      </ul>
+                  {activeResultsTab === 'hard' && (
+                    <div className="allocation-log" role="tabpanel">
+                      {logResults.failed.length > 0 ? (
+                        <div className="log-section failed">
+                          <h5>🔴 Hard Restrictions ({logResults.failed.length})</h5>
+                          <ul>
+                            {logResults.failed.map((msg, idx) => (
+                              <li key={idx}>{msg}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : (
+                        <div className="tab-empty-state">No hard restriction violations 🎉</div>
+                      )}
                     </div>
                   )}
 
-                  {allocationResult.allocationResults.warnings.length > 0 && (
-                    <div className="log-section warnings">
-                      <h5>⚠️ Warnings ({allocationResult.allocationResults.warnings.length})</h5>
-                      <ul>
-                        {allocationResult.allocationResults.warnings.map((msg, idx) => (
-                          <li key={idx}>{msg}</li>
-                        ))}
-                      </ul>
+                  {activeResultsTab === 'log' && (
+                    <div className="allocation-log" role="tabpanel">
+                      {logResults.successful.length > 0 ? (
+                        <div className="log-section success">
+                          <h5>✅ Successful ({logResults.successful.length})</h5>
+                          <ul>
+                            {logResults.successful.map((msg, idx) => (
+                              <li key={idx}>{msg}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : (
+                        <div className="tab-empty-state">No log entries yet</div>
+                      )}
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
-        {/* Instructions */}
-        {!parsedData && !isProcessing && (
-          <div className="instructions">
-            <h3>📋 How to Use</h3>
-            <div className="instruction-steps">
-              <div className="instruction-step">
-                <div className="step-number">1</div>
-                <div className="step-content">
-                  <h4>Upload Excel File (Recommended)</h4>
-                  <p>Upload your FYP Excel file containing supervisor and project information. This enables automatic project extraction and provides supervisor statistics.</p>
-                </div>
-              </div>
-              
-              <div className="instruction-step">
-                <div className="step-number">2</div>
-                <div className="step-content">
-                  <h4>Upload Instructor List</h4>
-                  <p>Upload a text file with instructor names. If you uploaded Excel data, just list instructor names (one per line). Otherwise, use the format "Instructor Name: Project1, Project2".</p>
-                </div>
-              </div>
-              
-              <div className="instruction-step">
-                <div className="step-number">3</div>
-                <div className="step-content">
-                  <h4>Configure & Generate</h4>
-                  <p>Set the constraints and run the allocation algorithm. Download the comprehensive Excel report with panel assignments and statistics.</p>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        )}
       </div>
 
   );

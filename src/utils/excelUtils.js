@@ -1,62 +1,137 @@
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import { generateJSON, isAIAvailable } from './modelApi';
 
-// Read Excel file and extract project data
+// ---- Smart sheet/column detection ----
+// Heuristics first; if they can't find the project data, the AI model reads the
+// sheet names + headers and picks the right sheet and columns.
+
+const COLUMN_PATTERNS = {
+  projectTitle: /project\s*title|^title$/i,
+  projectScope: /scope|description|abstract/i,
+  projectId: /short.?title|project.?id|^id$/i,
+  supervisor: /^supervisor|main\s*supervisor/i
+};
+
+function getSheetHeaders(workbook, sheetName) {
+  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
+  const headers = (rows[0] || []).map(h => String(h || '').trim()).filter(Boolean);
+  return { headers, rowCount: Math.max(0, rows.length - 1) };
+}
+
+function detectMappingHeuristically(workbook) {
+  let best = null;
+  workbook.SheetNames.forEach(sheetName => {
+    const { headers, rowCount } = getSheetHeaders(workbook, sheetName);
+    if (rowCount === 0) return;
+    const columns = {};
+    Object.entries(COLUMN_PATTERNS).forEach(([field, pattern]) => {
+      const match = headers.find(h => pattern.test(h));
+      if (match) columns[field] = match;
+    });
+    let score = Object.keys(columns).length;
+    if (columns.projectTitle) score += 2; // title is essential
+    if (!best || score > best.score) best = { sheetName, columns, score, rowCount };
+  });
+  return best;
+}
+
+async function detectMappingWithAI(workbook) {
+  const sheetSummaries = workbook.SheetNames.map(sheetName => {
+    const { headers, rowCount } = getSheetHeaders(workbook, sheetName);
+    return { sheet: sheetName, rows: rowCount, headers: headers.slice(0, 40) };
+  });
+
+  const prompt = `An Excel workbook contains Final Year Project data. Pick the sheet holding the main project list and identify which EXACT header names hold each field.
+
+Sheets and their headers:
+${JSON.stringify(sheetSummaries)}
+
+Respond with ONLY this JSON (use exact header strings from the data; use null when a field has no matching column):
+{"sheet": "SheetName", "projectTitle": "header", "projectScope": "header or null", "projectId": "header or null", "supervisor": "header or null"}`;
+
+  const result = await generateJSON(prompt, { retries: 1 });
+  if (!result.sheet || !workbook.SheetNames.includes(result.sheet) || !result.projectTitle) {
+    throw new Error('AI returned an unusable mapping');
+  }
+  return {
+    sheetName: result.sheet,
+    columns: {
+      projectTitle: result.projectTitle,
+      projectScope: result.projectScope || null,
+      projectId: result.projectId || null,
+      supervisor: result.supervisor || null
+    }
+  };
+}
+
+// Read Excel file and extract project data.
+// Detects the correct sheet and columns automatically (heuristics + AI).
 export function readExcelFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    
-    reader.onload = (e) => {
+
+    reader.onload = async (e) => {
       try {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
-        
-        // Get the first worksheet
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        
-        // Convert to JSON
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
-        
+
+        let mapping = detectMappingHeuristically(workbook);
+
+        // Heuristics failed to find a title column → ask the AI model.
+        if ((!mapping || !mapping.columns.projectTitle) && isAIAvailable()) {
+          try {
+            mapping = await detectMappingWithAI(workbook);
+          } catch (aiError) {
+            console.warn('AI sheet detection failed, using fallback:', aiError.message);
+          }
+        }
+
+        const sheetName = mapping?.sheetName || workbook.SheetNames[0];
+        const cols = mapping?.columns || {};
+        const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
         // Standardize column names while preserving ALL original data
         const standardizedData = jsonData.map((row, index) => {
           const standardRow = {
-            projectId: row['Short_Title'] || row['Project Short Title'] || `Project_${index + 1}`,
-            projectTitle: row['Project Title'] || '',
-            projectScope: row['Project Scope'] || '',
+            projectId: (cols.projectId && row[cols.projectId]) ||
+              row['Short_Title'] || row['Project Short Title'] || `Project_${index + 1}`,
+            projectTitle: (cols.projectTitle && row[cols.projectTitle]) || row['Project Title'] || '',
+            projectScope: (cols.projectScope && row[cols.projectScope]) || row['Project Scope'] || '',
             primaryDomain: row['Categorize the primary domain of project'] || '',
             subCategory: row['Sub-category of the project'] || '',
             // Preserve supervisor information - CRITICAL for panel allocation
-            supervisor: row['Supervisor'] || '',
+            supervisor: (cols.supervisor && row[cols.supervisor]) || row['Supervisor'] || '',
             // Preserve ALL original columns for compatibility
             ...row
           };
-          
+
           // Clean empty values
           Object.keys(standardRow).forEach(key => {
             if (standardRow[key] === undefined || standardRow[key] === null) {
               standardRow[key] = '';
             }
           });
-          
+
           return standardRow;
         });
-        
+
         resolve({
           data: standardizedData,
           totalProjects: standardizedData.length,
-          sheetNames: workbook.SheetNames
+          sheetNames: workbook.SheetNames,
+          detectedSheet: sheetName
         });
-        
+
       } catch (error) {
         reject(new Error(`Failed to read Excel file: ${error.message}`));
       }
     };
-    
+
     reader.onerror = () => {
       reject(new Error('Failed to read file'));
     };
-    
+
     reader.readAsArrayBuffer(file);
   });
 }

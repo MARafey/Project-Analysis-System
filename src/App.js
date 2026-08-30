@@ -3,10 +3,10 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 // Utils
-import { readExcelFile, exportDomainCategorization, exportSimilarityAnalysis, exportCombinedReports, createSampleExcelFile } from './utils/excelUtils';
+import { readExcelFile, exportDomainCategorization, exportSimilarityAnalysis, exportCombinedReports } from './utils/excelUtils';
 import { TFIDFVectorizer, cosineSimilarity, categorizeByKeywords, generateSimilarityExplanation, getSimilarityLevel } from './utils/textProcessing';
-import { initializeGemini, isGeminiAvailable, batchCategorizeWithGemini, batchAnalyzeSimilarityWithGemini } from './utils/geminiApi';
-import { configureModelEndpoint, clearModelEndpoint, getModelEndpointConfig, testConnection, getActiveProviderName } from './utils/modelApi';
+import { isGeminiAvailable, batchCategorizeWithGemini, batchAnalyzeSimilarityWithGemini } from './utils/geminiApi';
+import { getModelEndpointConfig, getActiveProviderName } from './utils/modelApi';
 
 // Components
 import PanelAllocation from './components/PanelAllocation';
@@ -24,17 +24,9 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentProject, setCurrentProject] = useState(0);
   const [totalProjects, setTotalProjects] = useState(0);
-  const [geminiApiKey, setGeminiApiKey] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
-  const [useGemini, setUseGemini] = useState(() => !!getModelEndpointConfig());
+  const [useGemini] = useState(() => !!getModelEndpointConfig());
   const [showPanelAllocation, setShowPanelAllocation] = useState(false);
-  // Removed unused state variable panelAllocationResult
-  const [useGeminiForSimilarity, setUseGeminiForSimilarity] = useState(true);
-  const [modelEndpointUrl, setModelEndpointUrl] = useState(() => getModelEndpointConfig()?.url || '');
-  const [modelEndpointKey, setModelEndpointKey] = useState('');
-  const [modelName, setModelName] = useState(() => getModelEndpointConfig()?.modelName || '');
-  const [endpointConnected, setEndpointConnected] = useState(() => !!getModelEndpointConfig());
-  const [isTestingEndpoint, setIsTestingEndpoint] = useState(false);
+  const [useGeminiForSimilarity] = useState(true);
 
   // Handle file upload
   const handleFileUpload = useCallback(async (file) => {
@@ -61,56 +53,6 @@ function App() {
       setAnalysisStatus('');
       toast.error(`Failed to load file: ${err.message}`);
     }
-  }, []);
-
-  // Initialize Gemini AI
-  const handleGeminiSetup = useCallback(() => {
-    if (!geminiApiKey.trim()) {
-      toast.error('Please enter a valid Gemini API key');
-      return;
-    }
-
-    const success = initializeGemini(geminiApiKey);
-    if (success) {
-      setUseGemini(true);
-      setShowSettings(false);
-      toast.success('Gemini AI initialized successfully!');
-    } else {
-      toast.error('Failed to initialize Gemini AI. Please check your API key.');
-    }
-  }, [geminiApiKey]);
-
-  // Connect the deployed model endpoint
-  const handleEndpointSetup = useCallback(async () => {
-    const configured = configureModelEndpoint({
-      url: modelEndpointUrl,
-      apiKey: modelEndpointKey,
-      modelName
-    });
-    if (!configured.success) {
-      toast.error(configured.error);
-      return;
-    }
-
-    setIsTestingEndpoint(true);
-    const test = await testConnection();
-    setIsTestingEndpoint(false);
-
-    if (test.success) {
-      setEndpointConnected(true);
-      setUseGemini(true); // enables the AI analysis path (provider-agnostic)
-      toast.success(`Connected to deployed model (${getActiveProviderName()})`);
-    } else {
-      clearModelEndpoint();
-      setEndpointConnected(false);
-      toast.error(`Endpoint test failed: ${test.error}`);
-    }
-  }, [modelEndpointUrl, modelEndpointKey, modelName]);
-
-  const handleEndpointDisconnect = useCallback(() => {
-    clearModelEndpoint();
-    setEndpointConnected(false);
-    toast.info('Deployed model disconnected');
   }, []);
 
   // Main analysis function
@@ -335,11 +277,6 @@ function App() {
     }
   }, [domainResults, similarityResults]);
 
-  const handleCreateSample = useCallback(() => {
-    createSampleExcelFile();
-    toast.success('Sample Excel file created and downloaded!');
-  }, []);
-
   // Removed unused handlePanelAllocationComplete function
 
   return (
@@ -358,21 +295,6 @@ function App() {
               </div>
             </div>
             
-            <div className="header-actions">
-              <button
-                onClick={() => setShowSettings(!showSettings)}
-                className="btn btn-secondary"
-              >
-                ⚙️ Settings
-              </button>
-              
-              <button
-                onClick={handleCreateSample}
-                className="btn btn-secondary"
-              >
-                📥 Sample Data
-              </button>
-            </div>
           </div>
 
           <nav className="header-nav" role="tablist" aria-label="Main sections">
@@ -400,121 +322,6 @@ function App() {
 
       <main className="main">
         <div className="container">
-          {/* Settings Panel */}
-          {showSettings && (
-            <div className="card settings-panel">
-              <h3 className="settings-title">
-                ✨ AI Configuration
-              </h3>
-
-              <div className="form-group">
-                <label className="form-label">
-                  Deployed Model Endpoint (Primary)
-                </label>
-                <div className="input-group">
-                  <input
-                    type="url"
-                    value={modelEndpointUrl}
-                    onChange={(e) => setModelEndpointUrl(e.target.value)}
-                    placeholder="https://your-site.com/api/model (or an OpenAI-compatible /v1 URL)"
-                    className="form-input"
-                  />
-                </div>
-                <div className="input-group" style={{ marginTop: '8px' }}>
-                  <input
-                    type="password"
-                    value={modelEndpointKey}
-                    onChange={(e) => setModelEndpointKey(e.target.value)}
-                    placeholder="API key (optional)"
-                    className="form-input"
-                  />
-                  <input
-                    type="text"
-                    value={modelName}
-                    onChange={(e) => setModelName(e.target.value)}
-                    placeholder="Model name (optional)"
-                    className="form-input"
-                  />
-                  <button
-                    onClick={handleEndpointSetup}
-                    disabled={!modelEndpointUrl.trim() || isTestingEndpoint}
-                    className="btn btn-primary"
-                  >
-                    {isTestingEndpoint ? 'Testing…' : endpointConnected ? 'Reconnect' : 'Connect'}
-                  </button>
-                </div>
-                {endpointConnected && (
-                  <div className="success-message">
-                    <p>
-                      ✅ Deployed model connected — used for classification, collision detection and panel suggestions
-                      {' '}
-                      <button onClick={handleEndpointDisconnect} className="link" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                        Disconnect
-                      </button>
-                    </p>
-                  </div>
-                )}
-                <p className="help-text">
-                  Point this at your hosted model. Supports OpenAI-compatible chat endpoints and simple {'{ prompt }'} REST APIs. Gemini below is used as fallback.
-                </p>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">
-                  Gemini API Key (Fallback)
-                </label>
-                <div className="input-group">
-                  <input
-                    type="password"
-                    value={geminiApiKey}
-                    onChange={(e) => setGeminiApiKey(e.target.value)}
-                    placeholder="Enter your Gemini API key for AI-powered analysis"
-                    className="form-input"
-                  />
-                  <button
-                    onClick={handleGeminiSetup}
-                    disabled={!geminiApiKey.trim()}
-                    className="btn btn-primary"
-                  >
-                    Setup AI
-                  </button>
-                </div>
-                
-                {useGemini && isGeminiAvailable() && (
-                  <div className="success-message">
-                    <p>✅ Gemini AI is active and ready</p>
-                    
-                    <div className="form-group">
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={useGeminiForSimilarity}
-                          onChange={(e) => setUseGeminiForSimilarity(e.target.checked)}
-                        />
-                        <span>Use Gemini AI for enhanced similarity analysis</span>
-                      </label>
-                      <p className="help-text">
-                        Enable for more detailed project comparisons using AI (slower but more accurate)
-                      </p>
-                    </div>
-                  </div>
-                )}
-                
-                <p className="help-text">
-                  Get your free API key from{' '}
-                  <a 
-                    href="https://makersuite.google.com/app/apikey" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="link"
-                  >
-                    Google AI Studio
-                  </a>
-                </p>
-              </div>
-            </div>
-          )}
-
           {activeTab === 'analysis' && (
           <>
           {/* File Upload Section */}
@@ -855,7 +662,7 @@ function App() {
               </div>
               
               <div className="pro-tip">
-                <p>💡 <strong>Pro tip:</strong> Add your Gemini API key in settings for AI-powered domain categorization with detailed explanations and higher accuracy!</p>
+                <p>💡 <strong>Pro tip:</strong> AI-powered classification and collision detection run automatically on the deployed model — just upload your Excel file and start the analysis!</p>
               </div>
               
               <div className="feature-highlights">
@@ -864,7 +671,7 @@ function App() {
                   <div className="feature-item">
                     <span className="feature-icon">🤖</span>
                     <h4>AI-Powered Analysis</h4>
-                    <p>Optional Gemini AI integration for intelligent project categorization</p>
+                    <p>Deployed AI model integration for intelligent project categorization</p>
                   </div>
                   <div className="feature-item">
                     <span className="feature-icon">📊</span>
