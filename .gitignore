@@ -74,3 +74,5 @@ ENV/
 .venv/
 .streamlit/
 config_local.py 
+# Claude Code local tooling
+.claude/
